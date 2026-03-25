@@ -164,7 +164,7 @@ export default function App(){
     const targetId = pendU || uid;
     if(!targetId){setErr("Chyba: neznámý uživatel.");return;}
     const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",targetId);
-    if(e){setErr("Nepodařilo se uložit PIN.");return;}
+    if(e){setErr(`PIN error: ${e.message} (${e.code})`);return;}
     setUsers(u=>({...u,[targetId]:{...u[targetId],pin:newPin}}));
     if(pendU) loginAs(pendU);
   }
