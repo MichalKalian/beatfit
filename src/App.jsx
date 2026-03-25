@@ -1,0 +1,403 @@
+import { useState, useEffect, useCallback } from "react";
+
+const ACTIVITIES = [
+  { key: "shyby",    label: "Shyby",     sub: "pull-ups",  unit: "ks", pts: 8,    icon: "⬆", color: "#c084fc" },
+  { key: "anglicky", label: "Angličáky", sub: "burpees",   unit: "ks", pts: 5,    icon: "★", color: "#f97316" },
+  { key: "kliky",    label: "Kliky",     sub: "push-ups",  unit: "ks", pts: 2,    icon: "▲", color: "#38bdf8" },
+  { key: "dreepy",   label: "Dřepy",     sub: "squats",    unit: "ks", pts: 1.5,  icon: "↓", color: "#34d399" },
+  { key: "sedLehy",  label: "Sed-lehy",  sub: "sit-ups",   unit: "ks", pts: 1,    icon: "↔", color: "#a3e635" },
+  { key: "behKm",    label: "Běh",       sub: "km",        unit: "km", pts: 15,   icon: "▶", color: "#fbbf24" },
+  { key: "koloKm",   label: "Kolo",      sub: "km",        unit: "km", pts: 4,    icon: "○", color: "#fb7185" },
+  { key: "plankSec", label: "Plank",     sub: "sekund",    unit: "s",  pts: 0.05, icon: "—", color: "#e879f9" },
+];
+
+function calcAge(dob) {
+  if (!dob) return 30;
+  const b = new Date(dob), t = new Date();
+  let age = t.getFullYear() - b.getFullYear();
+  if (t < new Date(t.getFullYear(), b.getMonth(), b.getDate())) age--;
+  return age;
+}
+
+function ageMult(age) {
+  const a = parseInt(age) || 30;
+  if (a >= 30) return 1 + (a - 30) * 0.015;
+  return Math.max(0.85, 1 - (30 - a) * 0.005);
+}
+
+function calcScore(e, age) {
+  if (!e) return 0;
+  return ACTIVITIES.reduce((s, a) => s + (parseFloat(e[a.key]) || 0) * a.pts, 0) * ageMult(age);
+}
+
+function todayStr() { return new Date().toISOString().split("T")[0]; }
+function weekAgoStr() {
+  const d = new Date(); d.setDate(d.getDate() - 7);
+  return d.toISOString().split("T")[0];
+}
+
+const MEDALS = ["🥇","🥈","🥉"];
+const RANK_CLR = ["#f59e0b","#94a3b8","#b87333"];
+
+export default function App() {
+  const [view, setView]       = useState("login");
+  const [uid, setUid]         = useState(null);
+  const [users, setUsers]     = useState({});
+  const [entries, setEntries] = useState({});
+  const [form, setForm]       = useState({});
+  const [newName, setNewName] = useState("");
+  const [newDob, setNewDob]   = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [flash, setFlash]     = useState(false);
+  const [period, setPeriod]   = useState("week");
+  const [logDate, setLogDate] = useState(todayStr());
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    try {
+      const ur = localStorage.getItem("fc_users");
+      const er = localStorage.getItem("fc_entries");
+      if (ur) setUsers(JSON.parse(ur));
+      if (er) setEntries(JSON.parse(er));
+    } catch(_) {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+function loginUser(userId) {
+  try {
+    const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
+      setEntries(fresh);
+      setForm(fresh[userId]?.[logDate] || {});
+    } catch(_) { setForm({}); }
+    setUid(userId);
+    setView("log");
+  }
+
+  async function register() {
+    if (!newName.trim() || !newDob) return;
+    const id = "u" + Date.now();
+    const nu = { ...users, [id]: { name: newName.trim(), dob: newDob, since: todayStr() } };
+    localStorage.setItem("fc_users", JSON.stringify(nu));
+    setUsers(nu);
+    setUid(id);
+    setForm({});
+    setView("log");
+  }
+
+function saveEntry() {
+  setSaving(true);
+  try {
+    const t = logDate || todayStr();
+    const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
+    const updated = { ...fresh, [uid]: { ...(fresh[uid] || {}), [t]: form } };
+    localStorage.setItem("fc_entries", JSON.stringify(updated));
+    setEntries(updated);
+    setFlash(true); setTimeout(() => setFlash(false), 2000);
+  } catch(_) {}
+  setSaving(false);
+}
+
+  function buildLB() {
+    const t = todayStr(), w = weekAgoStr();
+    const result = {};
+    for (const [id, days] of Object.entries(entries)) {
+      const u = users[id]; if (!u) continue;
+      let sc = 0; const acts = {};
+      for (const a of ACTIVITIES) acts[a.key] = 0;
+      for (const [date, e] of Object.entries(days)) {
+        if (period === "today" && date !== t) continue;
+        if (period === "week"  && date < w)  continue;
+        sc += calcScore(e, calcAge(u.dob));
+        for (const a of ACTIVITIES) acts[a.key] += parseFloat(e[a.key]) || 0;
+      }
+      result[id] = { sc, name: u.name, age: calcAge(u.dob), acts };
+    }
+    return result;
+  }
+
+  // ── styles ──────────────────────────────────────────────────────────────
+  const P = { padding:"1rem", maxWidth:480, margin:"0 auto" };
+
+  const topBarStyle = {
+    display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"0.75rem"
+  };
+  const navWrap = {
+    display:"flex", gap:3, background:"var(--color-background-secondary)",
+    padding:3, borderRadius:"var(--border-radius-md)", marginBottom:"1rem"
+  };
+  function navBtn(active) {
+    return {
+      flex:1, fontSize:12, fontWeight:500, border:"none", cursor:"pointer", padding:"7px 0",
+      borderRadius:6, background: active?"var(--color-background-primary)":"transparent",
+      color: active?"var(--color-text-primary)":"var(--color-text-secondary)",
+      boxShadow: active?"0 0 0 0.5px var(--color-border-tertiary)":"none"
+    };
+  }
+  function chipBtn(active) {
+    return {
+      flex:1, fontSize:12, fontWeight:500, cursor:"pointer", padding:"6px 0",
+      border:"0.5px solid var(--color-border-tertiary)",
+      borderRadius:"var(--border-radius-md)",
+      background: active?"var(--color-text-primary)":"transparent",
+      color: active?"var(--color-background-primary)":"var(--color-text-secondary)"
+    };
+  }
+  const statCard = {
+    background:"var(--color-background-secondary)", borderRadius:"var(--border-radius-md)", padding:"0.75rem 1rem"
+  };
+  const card = {
+    background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)",
+    borderRadius:"var(--border-radius-lg)", padding:"1rem 1.25rem"
+  };
+  const primaryBtn = {
+    display:"block", width:"100%", padding:"11px", fontWeight:700, fontSize:14,
+    background:"var(--color-text-primary)", color:"var(--color-background-primary)",
+    border:"none", borderRadius:"var(--border-radius-md)", cursor:"pointer", letterSpacing:0.3
+  };
+
+  // ── loading ──────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{...P, textAlign:"center", paddingTop:"3rem", color:"var(--color-text-secondary)", fontSize:14}}>
+      Načítám data…
+    </div>
+  );
+
+  const user = users[uid];
+
+  // ── login ────────────────────────────────────────────────────────────────
+  if (view === "login") return (
+    <div style={P}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+
+      <div style={{textAlign:"center", paddingTop:"0.5rem", marginBottom:"2rem"}}>
+        <div style={{display:"inline-block",fontSize:9,fontWeight:700,letterSpacing:3,color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-secondary)",padding:"3px 12px",borderRadius:20,marginBottom:10}}>FIREMNÍ SOUTĚŽ</div>
+        <h1 style={{margin:"0 0 4px",fontSize:38,fontWeight:800,letterSpacing:-1.5,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>Beatfit</h1>
+        <p style={{margin:0,fontSize:13,color:"var(--color-text-secondary)"}}>Zaznamenávej sporty, porovnávej výsledky</p>
+      </div>
+
+      {Object.keys(users).length > 0 && (
+        <div style={{marginBottom:"1.5rem"}}>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Přihlásit se jako</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>(
+              <button key={id} onClick={()=>loginUser(id)} style={{
+                display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
+                background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",
+                borderRadius:"var(--border-radius-md)",cursor:"pointer",width:"100%"
+              }}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{u.name[0]}</div>
+                <span style={{fontWeight:600,color:"var(--color-text-primary)",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>{u.name}</span>
+                <span style={{marginLeft:"auto",fontSize:12,color:"var(--color-text-secondary)"}}>{calcAge(u.dob)} let</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={card}>
+        <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Nový hráč</p>
+        <input placeholder="Celé jméno" value={newName} onChange={e=>setNewName(e.target.value)}
+          style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:8,fontFamily:"'DM Sans',sans-serif"}}/>
+        <label style={{display:"block",fontSize:11,color:"var(--color-text-secondary)",marginBottom:4,fontWeight:600,letterSpacing:0.5}}>Datum narození</label>
+        <input type="date" value={newDob} onChange={e=>setNewDob(e.target.value)}
+          style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:12,fontFamily:"'DM Sans',sans-serif"}}/>
+        <button onClick={register} disabled={!newName.trim()||!newDob} style={primaryBtn}>Zaregistrovat se →</button>
+      </div>
+    </div>
+  );
+
+  // ── shared nav + topbar ──────────────────────────────────────────────────
+  const TopBar = () => (
+    <div style={topBarStyle}>
+      <div>
+        <p style={{margin:0,fontWeight:700,fontSize:15,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{user.name}</p>
+        <p style={{margin:0,fontSize:11,color:"var(--color-text-secondary)"}}>{todayStr()}</p>
+      </div>
+      <button onClick={()=>{setUid(null);setView("login");}} style={{fontSize:11,color:"var(--color-text-secondary)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",padding:"4px 10px",borderRadius:20,cursor:"pointer"}}>Odhlásit</button>
+    </div>
+  );
+  const Nav = () => (
+    <div style={navWrap}>
+      {[["log","Záznam"],["leaderboard","Žebříček"],["stats","Moje"]].map(([v,l])=>(
+        <button key={v} onClick={()=>setView(v)} style={navBtn(view===v)}>{l}</button>
+      ))}
+    </div>
+  );
+
+  // ── log ──────────────────────────────────────────────────────────────────
+  if (view === "log") {
+    const age = calcAge(user.dob);
+    const sc = calcScore(form, age);
+    const selectedDate = logDate || todayStr();
+    return (
+      <div style={P}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <TopBar/><Nav/>
+          <input type="date" value={selectedDate} max={todayStr()}
+            onChange={e => {
+              setLogDate(e.target.value);
+              const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
+              setForm(fresh[uid]?.[e.target.value] || {});
+            }}
+            style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:"1rem",fontFamily:"'DM Mono',monospace"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:"1rem"}}>
+          <div style={statCard}>
+            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Dnešní skóre</p>
+            <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{sc.toFixed(1)}</p>
+          </div>
+          <div style={statCard}>
+            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Věkový koef.</p>
+            <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {ACTIVITIES.map(a=>(
+            <div key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
+              <div style={{width:34,height:34,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,background:a.color+"22",color:a.color,flexShrink:0}}>{a.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{a.label}</p>
+                <p style={{margin:0,fontSize:10,color:"var(--color-text-secondary)"}}>{a.pts} b/{a.unit} · {a.sub}</p>
+              </div>
+              <input type="number" min="0" step={a.unit==="km"?"0.1":"1"}
+                value={form[a.key]||""} placeholder="—"
+                onChange={e=>setForm(f=>({...f,[a.key]:e.target.value}))}
+                style={{width:64,textAlign:"right",padding:"7px 8px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",fontFamily:"'DM Mono',monospace"}}/>
+              <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:20}}>{a.unit}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={saveEntry} disabled={saving} style={{...primaryBtn,marginTop:"1rem"}}>
+          {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit dnešní výkon"}
+        </button>
+      </div>
+    );
+  }
+
+  // ── leaderboard ──────────────────────────────────────────────────────────
+  if (view === "leaderboard") {
+    const lb = buildLB();
+    const sorted = Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc);
+    const myRank = sorted.findIndex(([id])=>id===uid)+1;
+    const actW = {};
+    for (const a of ACTIVITIES) {
+      let best=null,bestV=-1;
+      for(const[,d] of Object.entries(lb)) if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}
+      if(bestV>0) actW[a.key]={name:best,val:bestV};
+    }
+    return (
+      <div style={P}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <TopBar/><Nav/>
+        <div style={{display:"flex",gap:4,marginBottom:"1rem"}}>
+          {[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setPeriod(k)} style={chipBtn(period===k)}>{l}</button>
+          ))}
+        </div>
+        {myRank>0&&(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",padding:"10px 14px",marginBottom:"1rem"}}>
+            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>Tvoje pořadí</span>
+            <span style={{fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}># {myRank}</span>
+            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>z {sorted.length} hráčů</span>
+          </div>
+        )}
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkové pořadí</p>
+        <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:"1.5rem"}}>
+          {sorted.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)"}}>Zatím žádná data pro toto období.</p>}
+          {sorted.map(([id,d],i)=>(
+            <div key={id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:id===uid?"var(--color-background-info)":"var(--color-background-secondary)",border:`0.5px solid ${id===uid?"var(--color-border-info)":"transparent"}`,borderRadius:"var(--border-radius-md)"}}>
+              <span style={{fontSize:16,minWidth:28,color:RANK_CLR[i]||"var(--color-text-secondary)",fontWeight:700}}>{MEDALS[i]||`${i+1}.`}</span>
+              <div style={{width:26,height:26,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{d.name[0]}</div>
+              <span style={{flex:1,fontWeight:600,fontSize:14,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{d.name}</span>
+              <span style={{fontSize:11,color:"var(--color-text-secondary)",marginRight:6}}>{d.age} r.</span>
+              <span style={{fontSize:16,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{d.sc.toFixed(1)}</span>
+              <span style={{fontSize:10,color:"var(--color-text-secondary)"}}>b</span>
+            </div>
+          ))}
+        </div>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Vítězové disciplín</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+          {ACTIVITIES.filter(a=>actW[a.key]).map(a=>(
+            <div key={a.key} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+                <div style={{width:22,height:22,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,background:a.color+"22",color:a.color,flexShrink:0}}>{a.icon}</div>
+                <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>{a.label}</span>
+              </div>
+              <p style={{margin:"0 0 2px",fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{actW[a.key].name}</p>
+              <p style={{margin:0,fontSize:11,color:"var(--color-text-secondary)",fontFamily:"'DM Mono',monospace"}}>
+                {a.unit==="km"?actW[a.key].val.toFixed(1):Math.round(actW[a.key].val)} {a.unit}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── my stats ─────────────────────────────────────────────────────────────
+  if (view === "stats") {
+    const myDays = entries[uid]||{};
+    const dates = Object.keys(myDays).sort().reverse();
+    const age = calcAge(user.dob);
+    const total = dates.reduce((s,d)=>s+calcScore(myDays[d],age),0);
+    const totals = {};
+    for(const a of ACTIVITIES) totals[a.key]=0;
+    for(const e of Object.values(myDays)) for(const a of ACTIVITIES) totals[a.key]+=(parseFloat(e[a.key])||0);
+    return (
+      <div style={P}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <TopBar/><Nav/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:"1rem"}}>
+          <div style={statCard}>
+            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkem bodů</p>
+            <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{total.toFixed(0)}</p>
+          </div>
+          <div style={statCard}>
+            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Aktivní dny</p>
+            <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{dates.length}</p>
+          </div>
+          <div style={statCard}>
+            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Věk. koef.</p>
+            <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
+          </div>
+        </div>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkové součty</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:"1.25rem"}}>
+          {ACTIVITIES.filter(a=>totals[a.key]>0).map(a=>(
+            <div key={a.key} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
+                <div style={{width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,background:a.color+"22",color:a.color,fontWeight:700}}>{a.icon}</div>
+                <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>{a.label}</span>
+              </div>
+              <p style={{margin:0,fontSize:16,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>
+                {a.unit==="km"?totals[a.key].toFixed(1):Math.round(totals[a.key])}
+                <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:3}}>{a.unit}</span>
+              </p>
+            </div>
+          ))}
+        </div>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Historie</p>
+        <div style={{display:"flex",flexDirection:"column",gap:5}}>
+          {dates.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)"}}>Žádné záznamy.</p>}
+          {dates.map(d=>(
+            <div key={d} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:12,fontWeight:600,fontFamily:"'DM Mono',monospace",color:"var(--color-text-secondary)"}}>{d}</span>
+                <span style={{fontSize:14,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{calcScore(myDays[d],age).toFixed(1)} b</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                {ACTIVITIES.filter(a=>parseFloat(myDays[d][a.key])>0).map(a=>(
+                  <span key={a.key} style={{fontSize:10,background:a.color+"20",color:a.color,padding:"2px 8px",borderRadius:20,fontWeight:700}}>
+                    {a.label} {a.unit==="km"?parseFloat(myDays[d][a.key]).toFixed(1):Math.round(parseFloat(myDays[d][a.key]))} {a.unit}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+}
