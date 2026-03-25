@@ -123,6 +123,10 @@ export default function App() {
   // ── registrace ──────────────────────────────────────────────────────────
   async function register() {
     if (!newName.trim() || !newDob) return;
+    const duplicate = Object.values(users).some(
+      u => u.name.toLowerCase() === newName.trim().toLowerCase()
+    );
+    if (duplicate) { setError(`Hráč se jménem "${newName.trim()}" již existuje.`); return; }
     setSaving(true);
     setError(null);
     const id = "u" + Date.now();
@@ -133,6 +137,25 @@ export default function App() {
     setUid(id);
     setForm({});
     setView("log");
+    setSaving(false);
+  }
+
+  // ── smazání záznamu ─────────────────────────────────────────────────────
+  async function deleteEntry() {
+    if (!window.confirm(`Opravdu smazat záznam za ${logDate}?`)) return;
+    setSaving(true);
+    setError(null);
+    const { error: e } = await supabase.from("entries")
+      .delete()
+      .eq("user_id", uid)
+      .eq("date", logDate);
+    if (e) { setError("Smazání se nezdařilo."); setSaving(false); return; }
+    setEntries(prev => {
+      const updated = { ...prev, [uid]: { ...(prev[uid] || {}) } };
+      delete updated[uid][logDate];
+      return updated;
+    });
+    setForm({});
     setSaving(false);
   }
 
@@ -380,9 +403,21 @@ export default function App() {
             </div>
           ))}
         </div>
-        <button onClick={saveEntry} disabled={saving} style={{...primaryBtn,marginTop:"1rem"}}>
-          {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit výkon"}
-        </button>
+        <div style={{display:"flex",gap:8,marginTop:"1rem"}}>
+          <button onClick={saveEntry} disabled={saving} style={{...primaryBtn,flex:1}}>
+            {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit výkon"}
+          </button>
+          {entries[uid]?.[logDate] && (
+            <button onClick={deleteEntry} disabled={saving} style={{padding:"11px 14px",fontWeight:600,fontSize:13,background:"transparent",color:"var(--color-text-danger)",border:"0.5px solid var(--color-border-danger)",borderRadius:"var(--border-radius-md)",cursor:"pointer",flexShrink:0}}>
+              Smazat
+            </button>
+          )}
+        </div>
+        {Object.keys(pts).some(k => pts[k] !== DEFAULT_PTS[k]) && (
+          <div style={{marginTop:"0.75rem",padding:"8px 12px",background:"var(--color-background-warning)",borderRadius:"var(--border-radius-md)",fontSize:11,color:"var(--color-text-warning)"}}>
+            Koeficienty byly upraveny administrátorem. Aktuální hodnoty jsou zobrazeny u každé aktivity.
+          </div>
+        )}
       </div>
     );
   }
@@ -431,7 +466,7 @@ export default function App() {
         </div>
         <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Vítězové disciplín</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-          {ACTIVITY_META.filter(a=>actW[a.key]).map(a=>(
+          {ACTIVITY_META.filter(a=>actW[a.key]).sort((a,b)=>actW[b.key].val-actW[a.key].val).map(a=>(
             <div key={a.key} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
               <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
                 <div style={{width:22,height:22,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,background:a.color+"22",color:a.color,flexShrink:0}}>{a.icon}</div>
