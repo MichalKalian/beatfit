@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_KEY
+);
 
 const ACTIVITIES = [
   { key: "shyby",    label: "Shyby",     sub: "pull-ups",  unit: "ks", pts: 8,    icon: "⬆", color: "#c084fc" },
@@ -52,54 +58,81 @@ export default function App() {
   const [flash, setFlash]     = useState(false);
   const [period, setPeriod]   = useState("week");
   const [logDate, setLogDate] = useState(todayStr());
+  const [error, setError]     = useState(null);
 
-  const loadData = useCallback(() => {
+  // ── načti uživatele a záznamy ze Supabase ──────────────────────────────
+  const loadData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const ur = localStorage.getItem("fc_users");
-      const er = localStorage.getItem("fc_entries");
-      if (ur) setUsers(JSON.parse(ur));
-      if (er) setEntries(JSON.parse(er));
-    } catch(_) {}
+      const { data: usersData, error: ue } = await supabase.from("users").select("*");
+      if (ue) throw ue;
+
+      const { data: entriesData, error: ee } = await supabase.from("entries").select("*");
+      if (ee) throw ee;
+
+      // users: { id -> { name, dob, since } }
+      const usersMap = {};
+      for (const u of usersData) usersMap[u.id] = { name: u.name, dob: u.dob, since: u.since };
+      setUsers(usersMap);
+
+      // entries: { userId -> { date -> { activity data } } }
+      const entriesMap = {};
+      for (const e of entriesData) {
+        if (!entriesMap[e.user_id]) entriesMap[e.user_id] = {};
+        entriesMap[e.user_id][e.date] = e.data;
+      }
+      setEntries(entriesMap);
+    } catch(e) {
+      setError("Nepodařilo se načíst data. Zkontroluj připojení.");
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-function loginUser(userId) {
-  try {
-    const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
-      setEntries(fresh);
-      setForm(fresh[userId]?.[logDate] || {});
-    } catch(_) { setForm({}); }
+  // ── přihlášení ──────────────────────────────────────────────────────────
+  function loginUser(userId) {
     setUid(userId);
+    setForm(entries[userId]?.[logDate] || {});
     setView("log");
   }
 
+  // ── registrace ──────────────────────────────────────────────────────────
   async function register() {
     if (!newName.trim() || !newDob) return;
+    setSaving(true);
+    setError(null);
     const id = "u" + Date.now();
-    const nu = { ...users, [id]: { name: newName.trim(), dob: newDob, since: todayStr() } };
-    localStorage.setItem("fc_users", JSON.stringify(nu));
-    setUsers(nu);
+    const newUser = { id, name: newName.trim(), dob: newDob, since: todayStr() };
+    const { error: e } = await supabase.from("users").insert(newUser);
+    if (e) { setError("Registrace se nezdařila."); setSaving(false); return; }
+    setUsers(u => ({ ...u, [id]: { name: newUser.name, dob: newUser.dob, since: newUser.since } }));
     setUid(id);
     setForm({});
     setView("log");
+    setSaving(false);
   }
 
-function saveEntry() {
-  setSaving(true);
-  try {
+  // ── uložení záznamu ─────────────────────────────────────────────────────
+  async function saveEntry() {
+    setSaving(true);
+    setError(null);
     const t = logDate || todayStr();
-    const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
-    const updated = { ...fresh, [uid]: { ...(fresh[uid] || {}), [t]: form } };
-    localStorage.setItem("fc_entries", JSON.stringify(updated));
-    setEntries(updated);
+    const { error: e } = await supabase.from("entries").upsert(
+      { user_id: uid, date: t, data: form },
+      { onConflict: "user_id,date" }
+    );
+    if (e) { setError("Uložení se nezdařilo."); setSaving(false); return; }
+    setEntries(prev => ({
+      ...prev,
+      [uid]: { ...(prev[uid] || {}), [t]: form }
+    }));
     setFlash(true); setTimeout(() => setFlash(false), 2000);
-  } catch(_) {}
-  setSaving(false);
-}
+    setSaving(false);
+  }
 
+  // ── žebříček ────────────────────────────────────────────────────────────
   function buildLB() {
     const t = todayStr(), w = weekAgoStr();
     const result = {};
@@ -120,43 +153,35 @@ function saveEntry() {
 
   // ── styles ──────────────────────────────────────────────────────────────
   const P = { padding:"1rem", maxWidth:480, margin:"0 auto" };
-
-  const topBarStyle = {
-    display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"0.75rem"
-  };
-  const navWrap = {
-    display:"flex", gap:3, background:"var(--color-background-secondary)",
-    padding:3, borderRadius:"var(--border-radius-md)", marginBottom:"1rem"
-  };
+  const topBarStyle = { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"0.75rem" };
+  const navWrap = { display:"flex", gap:3, background:"var(--color-background-secondary)", padding:3, borderRadius:"var(--border-radius-md)", marginBottom:"1rem" };
   function navBtn(active) {
-    return {
-      flex:1, fontSize:12, fontWeight:500, border:"none", cursor:"pointer", padding:"7px 0",
-      borderRadius:6, background: active?"var(--color-background-primary)":"transparent",
+    return { flex:1, fontSize:12, fontWeight:500, border:"none", cursor:"pointer", padding:"7px 0", borderRadius:6,
+      background: active?"var(--color-background-primary)":"transparent",
       color: active?"var(--color-text-primary)":"var(--color-text-secondary)",
-      boxShadow: active?"0 0 0 0.5px var(--color-border-tertiary)":"none"
-    };
+      boxShadow: active?"0 0 0 0.5px var(--color-border-tertiary)":"none" };
   }
   function chipBtn(active) {
-    return {
-      flex:1, fontSize:12, fontWeight:500, cursor:"pointer", padding:"6px 0",
-      border:"0.5px solid var(--color-border-tertiary)",
-      borderRadius:"var(--border-radius-md)",
+    return { flex:1, fontSize:12, fontWeight:500, cursor:"pointer", padding:"6px 0",
+      border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-md)",
       background: active?"var(--color-text-primary)":"transparent",
-      color: active?"var(--color-background-primary)":"var(--color-text-secondary)"
-    };
+      color: active?"var(--color-background-primary)":"var(--color-text-secondary)" };
   }
-  const statCard = {
-    background:"var(--color-background-secondary)", borderRadius:"var(--border-radius-md)", padding:"0.75rem 1rem"
-  };
-  const card = {
-    background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)",
-    borderRadius:"var(--border-radius-lg)", padding:"1rem 1.25rem"
-  };
-  const primaryBtn = {
-    display:"block", width:"100%", padding:"11px", fontWeight:700, fontSize:14,
+  const statCard = { background:"var(--color-background-secondary)", borderRadius:"var(--border-radius-md)", padding:"0.75rem 1rem" };
+  const card = { background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", padding:"1rem 1.25rem" };
+  const primaryBtn = { display:"block", width:"100%", padding:"11px", fontWeight:700, fontSize:14,
     background:"var(--color-text-primary)", color:"var(--color-background-primary)",
-    border:"none", borderRadius:"var(--border-radius-md)", cursor:"pointer", letterSpacing:0.3
-  };
+    border:"none", borderRadius:"var(--border-radius-md)", cursor:"pointer", letterSpacing:0.3 };
+  const inputStyle = { display:"block", width:"100%", boxSizing:"border-box", padding:"9px 12px", fontSize:14,
+    background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-tertiary)",
+    borderRadius:"var(--border-radius-md)", color:"var(--color-text-primary)", outline:"none",
+    fontFamily:"'DM Sans',sans-serif" };
+
+  const ErrorBanner = () => error ? (
+    <div style={{background:"var(--color-background-danger)",color:"var(--color-text-danger)",padding:"8px 12px",borderRadius:"var(--border-radius-md)",fontSize:13,marginBottom:"1rem"}}>
+      {error}
+    </div>
+  ) : null;
 
   // ── loading ──────────────────────────────────────────────────────────────
   if (loading) return (
@@ -178,16 +203,14 @@ function saveEntry() {
         <p style={{margin:0,fontSize:13,color:"var(--color-text-secondary)"}}>Zaznamenávej sporty, porovnávej výsledky</p>
       </div>
 
+      <ErrorBanner/>
+
       {Object.keys(users).length > 0 && (
         <div style={{marginBottom:"1.5rem"}}>
           <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Přihlásit se jako</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>(
-              <button key={id} onClick={()=>loginUser(id)} style={{
-                display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
-                background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",
-                borderRadius:"var(--border-radius-md)",cursor:"pointer",width:"100%"
-              }}>
+              <button key={id} onClick={()=>loginUser(id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",width:"100%"}}>
                 <div style={{width:32,height:32,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{u.name[0]}</div>
                 <span style={{fontWeight:600,color:"var(--color-text-primary)",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>{u.name}</span>
                 <span style={{marginLeft:"auto",fontSize:12,color:"var(--color-text-secondary)"}}>{calcAge(u.dob)} let</span>
@@ -199,22 +222,22 @@ function saveEntry() {
 
       <div style={card}>
         <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Nový hráč</p>
-        <input placeholder="Celé jméno" value={newName} onChange={e=>setNewName(e.target.value)}
-          style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:8,fontFamily:"'DM Sans',sans-serif"}}/>
+        <input placeholder="Celé jméno" value={newName} onChange={e=>setNewName(e.target.value)} style={{...inputStyle,marginBottom:8}}/>
         <label style={{display:"block",fontSize:11,color:"var(--color-text-secondary)",marginBottom:4,fontWeight:600,letterSpacing:0.5}}>Datum narození</label>
-        <input type="date" value={newDob} onChange={e=>setNewDob(e.target.value)}
-          style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:12,fontFamily:"'DM Sans',sans-serif"}}/>
-        <button onClick={register} disabled={!newName.trim()||!newDob} style={primaryBtn}>Zaregistrovat se →</button>
+        <input type="date" value={newDob} onChange={e=>setNewDob(e.target.value)} style={{...inputStyle,marginBottom:12,fontFamily:"'DM Mono',monospace"}}/>
+        <button onClick={register} disabled={!newName.trim()||!newDob||saving} style={primaryBtn}>
+          {saving ? "Registruji…" : "Zaregistrovat se →"}
+        </button>
       </div>
     </div>
   );
 
-  // ── shared nav + topbar ──────────────────────────────────────────────────
+  // ── sdílené komponenty ───────────────────────────────────────────────────
   const TopBar = () => (
     <div style={topBarStyle}>
       <div>
         <p style={{margin:0,fontWeight:700,fontSize:15,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{user.name}</p>
-        <p style={{margin:0,fontSize:11,color:"var(--color-text-secondary)"}}>{todayStr()}</p>
+        <p style={{margin:0,fontSize:11,color:"var(--color-text-secondary)"}}>{logDate}</p>
       </div>
       <button onClick={()=>{setUid(null);setView("login");}} style={{fontSize:11,color:"var(--color-text-secondary)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",padding:"4px 10px",borderRadius:20,cursor:"pointer"}}>Odhlásit</button>
     </div>
@@ -227,23 +250,24 @@ function saveEntry() {
     </div>
   );
 
-  // ── log ──────────────────────────────────────────────────────────────────
+  // ── záznam ───────────────────────────────────────────────────────────────
   if (view === "log") {
     const age = calcAge(user.dob);
     const sc = calcScore(form, age);
-    const selectedDate = logDate || todayStr();
     return (
       <div style={P}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
         <TopBar/><Nav/>
-          <input type="date" value={selectedDate} max={todayStr()}
-            onChange={e => {
-              setLogDate(e.target.value);
-              const fresh = JSON.parse(localStorage.getItem("fc_entries") || "{}");
-              setForm(fresh[uid]?.[e.target.value] || {});
-            }}
-            style={{display:"block",width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",marginBottom:"1rem",fontFamily:"'DM Mono',monospace"}}/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:"1rem"}}>
+        <ErrorBanner/>
+
+        <input type="date" value={logDate} max={todayStr()}
+          onChange={e => {
+            setLogDate(e.target.value);
+            setForm(entries[uid]?.[e.target.value] || {});
+          }}
+          style={{...inputStyle,marginBottom:"1rem",fontFamily:"'DM Mono',monospace"}}/>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:"1rem"}}>
           <div style={statCard}>
             <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Dnešní skóre</p>
             <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{sc.toFixed(1)}</p>
@@ -253,6 +277,7 @@ function saveEntry() {
             <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
           </div>
         </div>
+
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {ACTIVITIES.map(a=>(
             <div key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
@@ -270,13 +295,13 @@ function saveEntry() {
           ))}
         </div>
         <button onClick={saveEntry} disabled={saving} style={{...primaryBtn,marginTop:"1rem"}}>
-          {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit dnešní výkon"}
+          {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit výkon"}
         </button>
       </div>
     );
   }
 
-  // ── leaderboard ──────────────────────────────────────────────────────────
+  // ── žebříček ─────────────────────────────────────────────────────────────
   if (view === "leaderboard") {
     const lb = buildLB();
     const sorted = Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc);
@@ -291,6 +316,7 @@ function saveEntry() {
       <div style={P}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
         <TopBar/><Nav/>
+        <ErrorBanner/>
         <div style={{display:"flex",gap:4,marginBottom:"1rem"}}>
           {[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(
             <button key={k} onClick={()=>setPeriod(k)} style={chipBtn(period===k)}>{l}</button>
@@ -336,7 +362,7 @@ function saveEntry() {
     );
   }
 
-  // ── my stats ─────────────────────────────────────────────────────────────
+  // ── moje statistiky ───────────────────────────────────────────────────────
   if (view === "stats") {
     const myDays = entries[uid]||{};
     const dates = Object.keys(myDays).sort().reverse();
@@ -349,6 +375,7 @@ function saveEntry() {
       <div style={P}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
         <TopBar/><Nav/>
+        <ErrorBanner/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:"1rem"}}>
           <div style={statCard}>
             <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkem bodů</p>
