@@ -161,9 +161,12 @@ export default function App(){
 
   async function saveNewPin(){
     if(newPin.length<4||newPin!==newPinC){setErr("PINy se neshodují nebo jsou kratší než 4 číslice.");return;}
-    const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",pendU);
+    const targetId = pendU || uid;
+    if(!targetId){setErr("Chyba: neznámý uživatel.");return;}
+    const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",targetId);
     if(e){setErr("Nepodařilo se uložit PIN.");return;}
-    setUsers(u=>({...u,[pendU]:{...u[pendU],pin:newPin}}));loginAs(pendU);
+    setUsers(u=>({...u,[targetId]:{...u[targetId],pin:newPin}}));
+    if(pendU) loginAs(pendU);
   }
 
   function loginAs(id){
