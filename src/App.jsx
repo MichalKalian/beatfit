@@ -52,62 +52,100 @@ function weekAgoStr() {
   return d.toISOString().split("T")[0];
 }
 
-const MEDALS  = ["🥇","🥈","🥉"];
+function dateMinusDays(n) {
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0];
+}
+
+function calcStreak(days) {
+  if (!days || Object.keys(days).length === 0) return 0;
+  let streak = 0;
+  let cursor = new Date();
+  // if no entry today, start checking from yesterday
+  if (!days[todayStr()]) cursor.setDate(cursor.getDate() - 1);
+  while (true) {
+    const d = cursor.toISOString().split("T")[0];
+    if (!days[d]) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function exportCSV(userId, userName, days, pts, age) {
+  const headers = ["Datum", "Skóre", ...ACTIVITY_META.map(a => `${a.label} (${a.unit})`)];
+  const rows = Object.entries(days).sort(([a],[b])=>a.localeCompare(b)).map(([date, e]) => {
+    const sc = calcScore(e, age, pts).toFixed(2);
+    const vals = ACTIVITY_META.map(a => parseFloat(e[a.key]) || 0);
+    return [date, sc, ...vals];
+  });
+  const csv = [headers, ...rows].map(r => r.join(";")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `beatfit_${userName}_${todayStr()}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+const MEDALS   = ["🥇","🥈","🥉"];
 const RANK_CLR = ["#f59e0b","#94a3b8","#b87333"];
 
 export default function App() {
-  const [view, setView]       = useState("login");
-  const [uid, setUid]         = useState(null);
-  const [users, setUsers]     = useState({});
-  const [entries, setEntries] = useState({});
-  const [pts, setPts]         = useState(DEFAULT_PTS);
-  const [form, setForm]       = useState({});
-  const [newName, setNewName] = useState("");
-  const [newDob, setNewDob]   = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [flash, setFlash]     = useState(false);
-  const [period, setPeriod]   = useState("week");
-  const [logDate, setLogDate] = useState(todayStr());
-  const [error, setError]     = useState(null);
+  const [view, setView]         = useState("login");
+  const [uid, setUid]           = useState(null);
+  const [users, setUsers]       = useState({});
+  const [entries, setEntries]   = useState({});
+  const [pts, setPts]           = useState(DEFAULT_PTS);
+  const [goals, setGoals]       = useState({});
+  const [form, setForm]         = useState({});
+  const [newName, setNewName]   = useState("");
+  const [newDob, setNewDob]     = useState("");
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [flash, setFlash]       = useState(false);
+  const [period, setPeriod]     = useState("week");
+  const [logDate, setLogDate]   = useState(todayStr());
+  const [error, setError]       = useState(null);
   const [adminPwd, setAdminPwd] = useState("");
   const [adminError, setAdminError] = useState(false);
-  const [ptsEdit, setPtsEdit] = useState({});
+  const [adminTab, setAdminTab] = useState("pts");
+  const [ptsEdit, setPtsEdit]   = useState({});
   const [ptsSaving, setPtsSaving] = useState(false);
-  const [ptsFlash, setPtsFlash]   = useState(false);
+  const [ptsFlash, setPtsFlash] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editDob, setEditDob]   = useState("");
+  const [goalInput, setGoalInput] = useState("");
+  const [goalFlash, setGoalFlash] = useState(false);
 
   // ── načtení dat ──────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const [{ data: usersData, error: ue }, { data: entriesData, error: ee }, { data: settingsData, error: se }] =
-        await Promise.all([
-          supabase.from("users").select("*"),
-          supabase.from("entries").select("*"),
-          supabase.from("settings").select("*").eq("key", "pts"),
-        ]);
-      if (ue) throw ue;
-      if (ee) throw ee;
-
+      const [{ data: uD, error: ue }, { data: eD, error: ee },
+             { data: sD, error: se }, { data: gD, error: ge }] = await Promise.all([
+        supabase.from("users").select("*"),
+        supabase.from("entries").select("*"),
+        supabase.from("settings").select("*").eq("key", "pts"),
+        supabase.from("goals").select("*"),
+      ]);
+      if (ue) throw ue; if (ee) throw ee;
       const usersMap = {};
-      for (const u of usersData) usersMap[u.id] = { name: u.name, dob: u.dob, since: u.since };
+      for (const u of uD) usersMap[u.id] = { name: u.name, dob: u.dob, since: u.since };
       setUsers(usersMap);
-
       const entriesMap = {};
-      for (const e of entriesData) {
+      for (const e of eD) {
         if (!entriesMap[e.user_id]) entriesMap[e.user_id] = {};
         entriesMap[e.user_id][e.date] = e.data;
       }
       setEntries(entriesMap);
-
-      if (!se && settingsData?.length > 0) {
-        const saved = settingsData[0].value;
-        setPts({ ...DEFAULT_PTS, ...saved });
+      if (!se && sD?.length > 0) setPts({ ...DEFAULT_PTS, ...sD[0].value });
+      if (!ge && gD?.length > 0) {
+        const gMap = {};
+        for (const g of gD) gMap[g.user_id] = g.weekly_goal;
+        setGoals(gMap);
       }
-    } catch(e) {
-      setError("Nepodařilo se načíst data. Zkontroluj připojení.");
-    }
+    } catch(e) { setError("Nepodařilo se načíst data. Zkontroluj připojení."); }
     setLoading(false);
   }, []);
 
@@ -117,6 +155,7 @@ export default function App() {
   function loginUser(userId) {
     setUid(userId);
     setForm(entries[userId]?.[logDate] || {});
+    setGoalInput(goals[userId] || "");
     setView("log");
   }
 
@@ -127,46 +166,21 @@ export default function App() {
       u => u.name.toLowerCase() === newName.trim().toLowerCase()
     );
     if (duplicate) { setError(`Hráč se jménem "${newName.trim()}" již existuje.`); return; }
-    setSaving(true);
-    setError(null);
+    setSaving(true); setError(null);
     const id = "u" + Date.now();
     const newUser = { id, name: newName.trim(), dob: newDob, since: todayStr() };
     const { error: e } = await supabase.from("users").insert(newUser);
     if (e) { setError("Registrace se nezdařila."); setSaving(false); return; }
     setUsers(u => ({ ...u, [id]: { name: newUser.name, dob: newUser.dob, since: newUser.since } }));
-    setUid(id);
-    setForm({});
-    setView("log");
-    setSaving(false);
-  }
-
-  // ── smazání záznamu ─────────────────────────────────────────────────────
-  async function deleteEntry() {
-    if (!window.confirm(`Opravdu smazat záznam za ${logDate}?`)) return;
-    setSaving(true);
-    setError(null);
-    const { error: e } = await supabase.from("entries")
-      .delete()
-      .eq("user_id", uid)
-      .eq("date", logDate);
-    if (e) { setError("Smazání se nezdařilo."); setSaving(false); return; }
-    setEntries(prev => {
-      const updated = { ...prev, [uid]: { ...(prev[uid] || {}) } };
-      delete updated[uid][logDate];
-      return updated;
-    });
-    setForm({});
-    setSaving(false);
+    setUid(id); setForm({}); setGoalInput(""); setView("log"); setSaving(false);
   }
 
   // ── uložení záznamu ─────────────────────────────────────────────────────
   async function saveEntry() {
-    setSaving(true);
-    setError(null);
+    setSaving(true); setError(null);
     const t = logDate || todayStr();
     const { error: e } = await supabase.from("entries").upsert(
-      { user_id: uid, date: t, data: form },
-      { onConflict: "user_id,date" }
+      { user_id: uid, date: t, data: form }, { onConflict: "user_id,date" }
     );
     if (e) { setError("Uložení se nezdařilo."); setSaving(false); return; }
     setEntries(prev => ({ ...prev, [uid]: { ...(prev[uid] || {}), [t]: form } }));
@@ -174,13 +188,37 @@ export default function App() {
     setSaving(false);
   }
 
+  // ── smazání záznamu ─────────────────────────────────────────────────────
+  async function deleteEntry() {
+    if (!window.confirm(`Opravdu smazat záznam za ${logDate}?`)) return;
+    setSaving(true); setError(null);
+    const { error: e } = await supabase.from("entries").delete()
+      .eq("user_id", uid).eq("date", logDate);
+    if (e) { setError("Smazání se nezdařilo."); setSaving(false); return; }
+    setEntries(prev => {
+      const updated = { ...prev, [uid]: { ...(prev[uid] || {}) } };
+      delete updated[uid][logDate]; return updated;
+    });
+    setForm({}); setSaving(false);
+  }
+
+  // ── uložení týdenního cíle ───────────────────────────────────────────────
+  async function saveGoal() {
+    const val = parseFloat(goalInput) || 0;
+    const { error: e } = await supabase.from("goals").upsert(
+      { user_id: uid, weekly_goal: val }, { onConflict: "user_id" }
+    );
+    if (e) { setError("Uložení cíle selhalo."); return; }
+    setGoals(g => ({ ...g, [uid]: val }));
+    setGoalFlash(true); setTimeout(() => setGoalFlash(false), 2000);
+  }
+
   // ── uložení koeficientů ─────────────────────────────────────────────────
   async function savePts() {
     setPtsSaving(true);
     const merged = { ...pts, ...ptsEdit };
     const { error: e } = await supabase.from("settings").upsert(
-      { key: "pts", value: merged },
-      { onConflict: "key" }
+      { key: "pts", value: merged }, { onConflict: "key" }
     );
     if (e) { setError("Uložení koeficientů selhalo."); setPtsSaving(false); return; }
     setPts(merged);
@@ -188,15 +226,38 @@ export default function App() {
     setPtsSaving(false);
   }
 
+  // ── admin: uložení hráče ────────────────────────────────────────────────
+  async function saveEditUser() {
+    if (!editName.trim() || !editDob) return;
+    const duplicate = Object.entries(users).some(
+      ([id, u]) => id !== editUser && u.name.toLowerCase() === editName.trim().toLowerCase()
+    );
+    if (duplicate) { setError(`Jméno "${editName.trim()}" již existuje.`); return; }
+    const { error: e } = await supabase.from("users")
+      .update({ name: editName.trim(), dob: editDob })
+      .eq("id", editUser);
+    if (e) { setError("Uložení se nezdařilo."); return; }
+    setUsers(u => ({ ...u, [editUser]: { ...u[editUser], name: editName.trim(), dob: editDob } }));
+    setEditUser(null);
+  }
+
+  // ── admin: smazání hráče ────────────────────────────────────────────────
+  async function deleteUser(id) {
+    if (!window.confirm(`Opravdu smazat hráče "${users[id]?.name}" včetně všech záznamů?`)) return;
+    await supabase.from("entries").delete().eq("user_id", id);
+    await supabase.from("goals").delete().eq("user_id", id);
+    const { error: e } = await supabase.from("users").delete().eq("id", id);
+    if (e) { setError("Smazání se nezdařilo."); return; }
+    setUsers(u => { const n = {...u}; delete n[id]; return n; });
+    setEntries(en => { const n = {...en}; delete n[id]; return n; });
+    setGoals(g => { const n = {...g}; delete n[id]; return n; });
+  }
+
   // ── admin přihlášení ────────────────────────────────────────────────────
   function loginAdmin() {
     if (adminPwd === import.meta.env.VITE_ADMIN_PASSWORD) {
-      setPtsEdit({ ...pts });
-      setAdminError(false);
-      setView("admin");
-    } else {
-      setAdminError(true);
-    }
+      setPtsEdit({ ...pts }); setAdminError(false); setView("admin");
+    } else { setAdminError(true); }
   }
 
   // ── žebříček ────────────────────────────────────────────────────────────
@@ -242,12 +303,16 @@ export default function App() {
   const inputStyle = { display:"block", width:"100%", boxSizing:"border-box", padding:"9px 12px", fontSize:14,
     background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-tertiary)",
     borderRadius:"var(--border-radius-md)", color:"var(--color-text-primary)", outline:"none", fontFamily:"'DM Sans',sans-serif" };
+  const sectionLabel = { margin:"0 0 6px", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"var(--color-text-secondary)" };
 
   const ErrorBanner = () => error ? (
-    <div style={{background:"var(--color-background-danger)",color:"var(--color-text-danger)",padding:"8px 12px",borderRadius:"var(--border-radius-md)",fontSize:13,marginBottom:"1rem"}}>
-      {error}
+    <div style={{background:"var(--color-background-danger)",color:"var(--color-text-danger)",padding:"8px 12px",borderRadius:"var(--border-radius-md)",fontSize:13,marginBottom:"1rem",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span>{error}</span>
+      <button onClick={()=>setError(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--color-text-danger)",fontSize:16,padding:"0 0 0 8px"}}>×</button>
     </div>
   ) : null;
+
+  const FONT = `@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`;
 
   if (loading) return (
     <div style={{...P, textAlign:"center", paddingTop:"3rem", color:"var(--color-text-secondary)", fontSize:14}}>
@@ -261,7 +326,7 @@ export default function App() {
   // ── login ────────────────────────────────────────────────────────────────
   if (view === "login") return (
     <div style={P}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+      <style>{FONT}</style>
       <div style={{textAlign:"center", paddingTop:"0.5rem", marginBottom:"2rem"}}>
         <div style={{display:"inline-block",fontSize:9,fontWeight:700,letterSpacing:3,color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-secondary)",padding:"3px 12px",borderRadius:20,marginBottom:10}}>FIREMNÍ SOUTĚŽ</div>
         <h1 style={{margin:"0 0 4px",fontSize:38,fontWeight:800,letterSpacing:-1.5,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>Beatfit</h1>
@@ -270,20 +335,24 @@ export default function App() {
       <ErrorBanner/>
       {Object.keys(users).length > 0 && (
         <div style={{marginBottom:"1.5rem"}}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Přihlásit se jako</p>
+          <p style={sectionLabel}>Přihlásit se jako</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>(
-              <button key={id} onClick={()=>loginUser(id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",width:"100%"}}>
-                <div style={{width:32,height:32,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{u.name[0]}</div>
-                <span style={{fontWeight:600,color:"var(--color-text-primary)",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>{u.name}</span>
-                <span style={{marginLeft:"auto",fontSize:12,color:"var(--color-text-secondary)"}}>{calcAge(u.dob)} let</span>
-              </button>
-            ))}
+            {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>{
+              const streak = calcStreak(entries[id]||{});
+              return (
+                <button key={id} onClick={()=>loginUser(id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",width:"100%"}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{u.name[0]}</div>
+                  <span style={{fontWeight:600,color:"var(--color-text-primary)",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>{u.name}</span>
+                  {streak > 1 && <span style={{fontSize:11,background:"#f97316"+"22",color:"#f97316",padding:"2px 7px",borderRadius:20,fontWeight:700,marginLeft:4}}>{streak}d 🔥</span>}
+                  <span style={{marginLeft:"auto",fontSize:12,color:"var(--color-text-secondary)"}}>{calcAge(u.dob)} let</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
       <div style={card}>
-        <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Nový hráč</p>
+        <p style={{...sectionLabel, marginBottom:10}}>Nový hráč</p>
         <input placeholder="Celé jméno" value={newName} onChange={e=>setNewName(e.target.value)} style={{...inputStyle,marginBottom:8}}/>
         <label style={{display:"block",fontSize:11,color:"var(--color-text-secondary)",marginBottom:4,fontWeight:600,letterSpacing:0.5}}>Datum narození</label>
         <input type="date" value={newDob} onChange={e=>setNewDob(e.target.value)} style={{...inputStyle,marginBottom:12,fontFamily:"'DM Mono',monospace"}}/>
@@ -292,10 +361,11 @@ export default function App() {
         </button>
       </div>
       <div style={{...card, marginTop:"1rem"}}>
-        <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Administrátor</p>
-        <input type="password" placeholder="Heslo" value={adminPwd} onChange={e=>{setAdminPwd(e.target.value);setAdminError(false);}}
+        <p style={{...sectionLabel, marginBottom:10}}>Administrátor</p>
+        <input type="password" placeholder="Heslo" value={adminPwd}
+          onChange={e=>{setAdminPwd(e.target.value);setAdminError(false);}}
           onKeyDown={e=>e.key==="Enter"&&loginAdmin()}
-          style={{...inputStyle, marginBottom:8, borderColor: adminError?"var(--color-border-danger)":"var(--color-border-tertiary)"}}/>
+          style={{...inputStyle, marginBottom:8, borderColor:adminError?"var(--color-border-danger)":"var(--color-border-tertiary)"}}/>
         {adminError && <p style={{margin:"0 0 8px",fontSize:12,color:"var(--color-text-danger)"}}>Nesprávné heslo</p>}
         <button onClick={loginAdmin} style={primaryBtn}>Přihlásit jako admin →</button>
       </div>
@@ -305,45 +375,88 @@ export default function App() {
   // ── admin panel ───────────────────────────────────────────────────────────
   if (view === "admin") return (
     <div style={P}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+      <style>{FONT}</style>
       <div style={topBarStyle}>
         <div>
           <p style={{margin:0,fontWeight:700,fontSize:15,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>Administrátor</p>
-          <p style={{margin:0,fontSize:11,color:"var(--color-text-secondary)"}}>Nastavení koeficientů</p>
         </div>
         <button onClick={()=>setView("login")} style={{fontSize:11,color:"var(--color-text-secondary)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",padding:"4px 10px",borderRadius:20,cursor:"pointer"}}>Odhlásit</button>
       </div>
       <ErrorBanner/>
-      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Body za jednotku</p>
-      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1rem"}}>
-        {ACTIVITY_META.map(a => {
-          const current = ptsEdit[a.key] ?? pts[a.key] ?? DEFAULT_PTS[a.key];
-          const isChanged = ptsEdit[a.key] !== undefined && ptsEdit[a.key] !== DEFAULT_PTS[a.key];
-          return (
-            <div key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"var(--color-background-primary)",border:`0.5px solid ${isChanged?"var(--color-border-warning)":"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-md)"}}>
-              <div style={{width:34,height:34,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,background:a.color+"22",color:a.color,flexShrink:0}}>{a.icon}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{a.label}</p>
-                <p style={{margin:0,fontSize:10,color:"var(--color-text-secondary)"}}>výchozí: {DEFAULT_PTS[a.key]} b/{a.unit}</p>
-              </div>
-              <input type="number" min="0" step="0.01"
-                value={current}
-                onChange={e => setPtsEdit(p => ({ ...p, [a.key]: parseFloat(e.target.value) || 0 }))}
-                style={{width:70,textAlign:"right",padding:"7px 8px",fontSize:14,background:"var(--color-background-secondary)",border:`0.5px solid ${isChanged?"var(--color-border-warning)":"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",fontFamily:"'DM Mono',monospace"}}/>
-              <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:28}}>b/{a.unit}</span>
-            </div>
-          );
-        })}
+      <div style={{display:"flex",gap:3,background:"var(--color-background-secondary)",padding:3,borderRadius:"var(--border-radius-md)",marginBottom:"1rem"}}>
+        {[["pts","Koeficienty"],["players","Hráči"]].map(([t,l])=>(
+          <button key={t} onClick={()=>{setAdminTab(t);setEditUser(null);setError(null);}} style={navBtn(adminTab===t)}>{l}</button>
+        ))}
       </div>
-      <button onClick={()=>{ setPtsEdit({...DEFAULT_PTS}); }} style={{...primaryBtn, background:"var(--color-background-secondary)", color:"var(--color-text-secondary)", border:"0.5px solid var(--color-border-tertiary)", marginBottom:8}}>
-        Obnovit výchozí hodnoty
-      </button>
-      <button onClick={savePts} disabled={ptsSaving} style={primaryBtn}>
-        {ptsSaving?"Ukládám…":ptsFlash?"✓ Uloženo!":"Uložit koeficienty"}
-      </button>
-      <p style={{marginTop:12,fontSize:11,color:"var(--color-text-secondary)",textAlign:"center"}}>
-        Změny se projeví všem hráčům okamžitě po uložení.
-      </p>
+
+      {adminTab === "pts" && <>
+        <p style={sectionLabel}>Body za jednotku</p>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1rem"}}>
+          {ACTIVITY_META.map(a => {
+            const current = ptsEdit[a.key] ?? pts[a.key] ?? DEFAULT_PTS[a.key];
+            const isChanged = ptsEdit[a.key] !== undefined && ptsEdit[a.key] !== DEFAULT_PTS[a.key];
+            return (
+              <div key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"var(--color-background-primary)",border:`0.5px solid ${isChanged?"var(--color-border-warning)":"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-md)"}}>
+                <div style={{width:34,height:34,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,background:a.color+"22",color:a.color,flexShrink:0}}>{a.icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{a.label}</p>
+                  <p style={{margin:0,fontSize:10,color:"var(--color-text-secondary)"}}>výchozí: {DEFAULT_PTS[a.key]} b/{a.unit}</p>
+                </div>
+                <input type="number" min="0" step="0.01" value={current}
+                  onChange={e=>setPtsEdit(p=>({...p,[a.key]:parseFloat(e.target.value)||0}))}
+                  style={{width:70,textAlign:"right",padding:"7px 8px",fontSize:14,background:"var(--color-background-secondary)",border:`0.5px solid ${isChanged?"var(--color-border-warning)":"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-md)",color:"var(--color-text-primary)",outline:"none",fontFamily:"'DM Mono',monospace"}}/>
+                <span style={{fontSize:11,color:"var(--color-text-secondary)",minWidth:28}}>b/{a.unit}</span>
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={()=>setPtsEdit({...DEFAULT_PTS})} style={{...primaryBtn,background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-tertiary)",marginBottom:8}}>
+          Obnovit výchozí hodnoty
+        </button>
+        <button onClick={savePts} disabled={ptsSaving} style={primaryBtn}>
+          {ptsSaving?"Ukládám…":ptsFlash?"✓ Uloženo!":"Uložit koeficienty"}
+        </button>
+        <p style={{marginTop:12,fontSize:11,color:"var(--color-text-secondary)",textAlign:"center"}}>Změny se projeví všem hráčům okamžitě.</p>
+      </>}
+
+      {adminTab === "players" && <>
+        <p style={sectionLabel}>Správa hráčů</p>
+        {editUser ? (
+          <div style={card}>
+            <p style={{...sectionLabel,marginBottom:10}}>Upravit hráče</p>
+            <input value={editName} onChange={e=>setEditName(e.target.value)} style={{...inputStyle,marginBottom:8}} placeholder="Jméno"/>
+            <label style={{display:"block",fontSize:11,color:"var(--color-text-secondary)",marginBottom:4,fontWeight:600}}>Datum narození</label>
+            <input type="date" value={editDob} onChange={e=>setEditDob(e.target.value)} style={{...inputStyle,marginBottom:12,fontFamily:"'DM Mono',monospace"}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={saveEditUser} style={{...primaryBtn,flex:1}}>Uložit</button>
+              <button onClick={()=>setEditUser(null)} style={{flex:1,padding:"11px",fontWeight:600,fontSize:14,background:"transparent",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer"}}>Zrušit</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>{
+              const entryCount = Object.keys(entries[id]||{}).length;
+              return (
+                <div key={id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{u.name[0]}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"var(--color-text-primary)",fontFamily:"'DM Sans',sans-serif"}}>{u.name}</p>
+                    <p style={{margin:0,fontSize:10,color:"var(--color-text-secondary)"}}>{calcAge(u.dob)} let · {entryCount} záznamů</p>
+                  </div>
+                  <button onClick={()=>{setEditUser(id);setEditName(u.name);setEditDob(u.dob);setError(null);}}
+                    style={{fontSize:11,padding:"4px 10px",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:6,cursor:"pointer",color:"var(--color-text-secondary)"}}>
+                    Upravit
+                  </button>
+                  <button onClick={()=>deleteUser(id)}
+                    style={{fontSize:11,padding:"4px 10px",background:"transparent",border:"0.5px solid var(--color-border-danger)",borderRadius:6,cursor:"pointer",color:"var(--color-text-danger)"}}>
+                    Smazat
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>}
     </div>
   );
 
@@ -369,24 +482,52 @@ export default function App() {
   if (view === "log") {
     const age = calcAge(user.dob);
     const sc = calcScore(form, age, pts);
+    const streak = calcStreak(entries[uid]||{});
+    const weekGoal = parseFloat(goals[uid]) || 0;
+    const weekScore = Object.entries(entries[uid]||{})
+      .filter(([d]) => d >= weekAgoStr())
+      .reduce((s,[,e]) => s + calcScore(e, age, pts), 0);
+    const goalPct = weekGoal > 0 ? Math.min(100, (weekScore / weekGoal) * 100) : 0;
+
     return (
       <div style={P}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <style>{FONT}</style>
         <TopBar/><Nav/>
         <ErrorBanner/>
         <input type="date" value={logDate} max={todayStr()}
-          onChange={e => { setLogDate(e.target.value); setForm(entries[uid]?.[e.target.value] || {}); }}
+          onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}}
           style={{...inputStyle,marginBottom:"1rem",fontFamily:"'DM Mono',monospace"}}/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:"1rem"}}>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           <div style={statCard}>
-            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Skóre</p>
-            <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{sc.toFixed(1)}</p>
+            <p style={{margin:"0 0 4px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Skóre</p>
+            <p style={{margin:0,fontSize:22,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{sc.toFixed(1)}</p>
           </div>
           <div style={statCard}>
-            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Věkový koef.</p>
-            <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
+            <p style={{margin:"0 0 4px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Věk. koef.</p>
+            <p style={{margin:0,fontSize:22,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
+          </div>
+          <div style={statCard}>
+            <p style={{margin:"0 0 4px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Streak</p>
+            <p style={{margin:0,fontSize:22,fontWeight:700,fontFamily:"'DM Mono',monospace",color: streak>=7?"#f97316":"var(--color-text-primary)"}}>
+              {streak}{streak>0?" 🔥":""}
+            </p>
           </div>
         </div>
+
+        {weekGoal > 0 && (
+          <div style={{...statCard, marginBottom:"1rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <p style={{margin:0,fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Týdenní cíl</p>
+              <span style={{fontSize:12,fontFamily:"'DM Mono',monospace",color:"var(--color-text-secondary)"}}>{weekScore.toFixed(0)} / {weekGoal} b</span>
+            </div>
+            <div style={{height:6,background:"var(--color-border-tertiary)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${goalPct}%`,background:goalPct>=100?"#34d399":"#38bdf8",borderRadius:3,transition:"width 0.3s"}}/>
+            </div>
+            {goalPct >= 100 && <p style={{margin:"6px 0 0",fontSize:11,color:"#34d399",fontWeight:700}}>Cíl splněn! 🎉</p>}
+          </div>
+        )}
+
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {ACTIVITIES.map(a=>(
             <div key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
@@ -403,6 +544,7 @@ export default function App() {
             </div>
           ))}
         </div>
+
         <div style={{display:"flex",gap:8,marginTop:"1rem"}}>
           <button onClick={saveEntry} disabled={saving} style={{...primaryBtn,flex:1}}>
             {saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit výkon"}
@@ -413,9 +555,9 @@ export default function App() {
             </button>
           )}
         </div>
-        {Object.keys(pts).some(k => pts[k] !== DEFAULT_PTS[k]) && (
+        {Object.keys(pts).some(k=>pts[k]!==DEFAULT_PTS[k]) && (
           <div style={{marginTop:"0.75rem",padding:"8px 12px",background:"var(--color-background-warning)",borderRadius:"var(--border-radius-md)",fontSize:11,color:"var(--color-text-warning)"}}>
-            Koeficienty byly upraveny administrátorem. Aktuální hodnoty jsou zobrazeny u každé aktivity.
+            Koeficienty byly upraveny administrátorem.
           </div>
         )}
       </div>
@@ -435,7 +577,7 @@ export default function App() {
     }
     return (
       <div style={P}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <style>{FONT}</style>
         <TopBar/><Nav/>
         <ErrorBanner/>
         <div style={{display:"flex",gap:4,marginBottom:"1rem"}}>
@@ -450,21 +592,25 @@ export default function App() {
             <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>z {sorted.length} hráčů</span>
           </div>
         )}
-        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkové pořadí</p>
+        <p style={sectionLabel}>Celkové pořadí</p>
         <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:"1.5rem"}}>
           {sorted.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)"}}>Zatím žádná data pro toto období.</p>}
-          {sorted.map(([id,d],i)=>(
-            <div key={id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:id===uid?"var(--color-background-info)":"var(--color-background-secondary)",border:`0.5px solid ${id===uid?"var(--color-border-info)":"transparent"}`,borderRadius:"var(--border-radius-md)"}}>
-              <span style={{fontSize:16,minWidth:28,color:RANK_CLR[i]||"var(--color-text-secondary)",fontWeight:700}}>{MEDALS[i]||`${i+1}.`}</span>
-              <div style={{width:26,height:26,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{d.name[0]}</div>
-              <span style={{flex:1,fontWeight:600,fontSize:14,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{d.name}</span>
-              <span style={{fontSize:11,color:"var(--color-text-secondary)",marginRight:6}}>{d.age} r.</span>
-              <span style={{fontSize:16,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{d.sc.toFixed(1)}</span>
-              <span style={{fontSize:10,color:"var(--color-text-secondary)"}}>b</span>
-            </div>
-          ))}
+          {sorted.map(([id,d],i)=>{
+            const streak = calcStreak(entries[id]||{});
+            return (
+              <div key={id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:id===uid?"var(--color-background-info)":"var(--color-background-secondary)",border:`0.5px solid ${id===uid?"var(--color-border-info)":"transparent"}`,borderRadius:"var(--border-radius-md)"}}>
+                <span style={{fontSize:16,minWidth:28,color:RANK_CLR[i]||"var(--color-text-secondary)",fontWeight:700}}>{MEDALS[i]||`${i+1}.`}</span>
+                <div style={{width:26,height:26,borderRadius:"50%",background:"var(--color-background-info)",color:"var(--color-text-info)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{d.name[0]}</div>
+                <span style={{flex:1,fontWeight:600,fontSize:14,fontFamily:"'DM Sans',sans-serif",color:"var(--color-text-primary)"}}>{d.name}</span>
+                {streak>=3&&<span style={{fontSize:10,color:"#f97316",fontWeight:700}}>{streak}🔥</span>}
+                <span style={{fontSize:11,color:"var(--color-text-secondary)",marginRight:4}}>{d.age}r.</span>
+                <span style={{fontSize:16,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{d.sc.toFixed(1)}</span>
+                <span style={{fontSize:10,color:"var(--color-text-secondary)"}}>b</span>
+              </div>
+            );
+          })}
         </div>
-        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Vítězové disciplín</p>
+        <p style={sectionLabel}>Vítězové disciplín</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
           {ACTIVITY_META.filter(a=>actW[a.key]).sort((a,b)=>actW[b.key].val-actW[a.key].val).map(a=>(
             <div key={a.key} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
@@ -489,14 +635,27 @@ export default function App() {
     const dates = Object.keys(myDays).sort().reverse();
     const age = calcAge(user.dob);
     const total = dates.reduce((s,d)=>s+calcScore(myDays[d],age,pts),0);
+    const streak = calcStreak(myDays);
+    const weekGoal = parseFloat(goals[uid]) || 0;
+    const weekScore = Object.entries(myDays)
+      .filter(([d])=>d>=weekAgoStr())
+      .reduce((s,[,e])=>s+calcScore(e,age,pts),0);
+    const goalPct = weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     const totals = {};
     for(const a of ACTIVITY_META) totals[a.key]=0;
     for(const e of Object.values(myDays)) for(const a of ACTIVITY_META) totals[a.key]+=(parseFloat(e[a.key])||0);
+
+    // graf: posledních 14 dní
+    const chartDays = Array.from({length:14},(_,i)=>dateMinusDays(13-i));
+    const chartScores = chartDays.map(d=>calcScore(myDays[d]||{},age,pts));
+    const maxScore = Math.max(...chartScores, 1);
+
     return (
       <div style={P}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <style>{FONT}</style>
         <TopBar/><Nav/>
         <ErrorBanner/>
+
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:"1rem"}}>
           <div style={statCard}>
             <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkem bodů</p>
@@ -507,11 +666,60 @@ export default function App() {
             <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>{dates.length}</p>
           </div>
           <div style={statCard}>
-            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Věk. koef.</p>
-            <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:"var(--color-text-primary)"}}>×{ageMult(age).toFixed(2)}</p>
+            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Streak</p>
+            <p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace",color:streak>=7?"#f97316":"var(--color-text-primary)"}}>
+              {streak}{streak>0?" 🔥":""}
+            </p>
           </div>
         </div>
-        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Celkové součty</p>
+
+        {/* týdenní cíl */}
+        <div style={{...card,marginBottom:"1rem"}}>
+          <p style={{...sectionLabel,marginBottom:8}}>Týdenní cíl (body)</p>
+          <div style={{display:"flex",gap:8,marginBottom:weekGoal>0?10:0}}>
+            <input type="number" min="0" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="Nastav cíl na tento týden"
+              style={{...inputStyle,flex:1,fontFamily:"'DM Mono',monospace"}}/>
+            <button onClick={saveGoal} style={{padding:"9px 14px",fontWeight:700,fontSize:13,background:"var(--color-text-primary)",color:"var(--color-background-primary)",border:"none",borderRadius:"var(--border-radius-md)",cursor:"pointer",flexShrink:0}}>
+              {goalFlash?"✓":"Uložit"}
+            </button>
+          </div>
+          {weekGoal>0&&(
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>Tento týden</span>
+                <span style={{fontSize:12,fontFamily:"'DM Mono',monospace",color:"var(--color-text-secondary)"}}>{weekScore.toFixed(0)} / {weekGoal} b</span>
+              </div>
+              <div style={{height:6,background:"var(--color-border-tertiary)",borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${goalPct}%`,background:goalPct>=100?"#34d399":"#38bdf8",borderRadius:3}}/>
+              </div>
+              {goalPct>=100&&<p style={{margin:"6px 0 0",fontSize:11,color:"#34d399",fontWeight:700}}>Cíl splněn! 🎉</p>}
+            </>
+          )}
+        </div>
+
+        {/* graf aktivit – posledních 14 dní */}
+        <p style={sectionLabel}>Aktivita — posledních 14 dní</p>
+        <div style={{...card,marginBottom:"1rem",padding:"1rem"}}>
+          <div style={{display:"flex",alignItems:"flex-end",gap:3,height:64}}>
+            {chartDays.map((d,i)=>{
+              const sc = chartScores[i];
+              const h = sc>0?Math.max(4,Math.round((sc/maxScore)*56)):2;
+              const isToday = d===todayStr();
+              return (
+                <div key={d} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div title={`${d}: ${sc.toFixed(1)} b`} style={{width:"100%",height:h,background:isToday?"#38bdf8":sc>0?"#c084fc":"var(--color-border-tertiary)",borderRadius:"3px 3px 0 0",cursor:"default"}}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+            <span style={{fontSize:9,color:"var(--color-text-secondary)",fontFamily:"'DM Mono',monospace"}}>{chartDays[0].slice(5)}</span>
+            <span style={{fontSize:9,color:"var(--color-text-secondary)",fontFamily:"'DM Mono',monospace"}}>dnes</span>
+          </div>
+        </div>
+
+        {/* celkové součty */}
+        <p style={sectionLabel}>Celkové součty</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:"1.25rem"}}>
           {ACTIVITY_META.filter(a=>totals[a.key]>0).map(a=>(
             <div key={a.key} style={{padding:"10px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)"}}>
@@ -526,7 +734,15 @@ export default function App() {
             </div>
           ))}
         </div>
-        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Historie</p>
+
+        {/* export + historie */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+          <p style={{...sectionLabel,margin:0}}>Historie</p>
+          <button onClick={()=>exportCSV(uid,user.name,myDays,pts,age)}
+            style={{fontSize:11,fontWeight:600,padding:"4px 12px",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:20,cursor:"pointer",color:"var(--color-text-secondary)"}}>
+            Exportovat CSV ↓
+          </button>
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:5}}>
           {dates.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)"}}>Žádné záznamy.</p>}
           {dates.map(d=>(
