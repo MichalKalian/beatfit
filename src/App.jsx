@@ -4,7 +4,7 @@ import "./beatfit.css";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
-const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003 };
+const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5 };
 const AM = [
   {key:"shyby",   label:"Shyby",    sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
   {key:"anglicky",label:"Angličáky",sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},
@@ -15,6 +15,7 @@ const AM = [
   {key:"koloKm",  label:"Kolo",     sub:"km",       unit:"km", icon:"○",color:"#fb7185"},
   {key:"plankSec",label:"Plank",    sub:"sekund",   unit:"s",  icon:"—",color:"#e879f9"},
   {key:"kroky",   label:"Kroky",    sub:"steps",    unit:"kr", icon:"◆",color:"#06b6d4"},
+  {key:"silovy",  label:"Silový tr.",sub:"strength", unit:"min",icon:"◉",color:"#f43f5e"},
 ];
 
 const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key]}));
@@ -86,6 +87,9 @@ export default function App(){
   const[goalFlash,setGoalFlash] = useState(false);
   const[renameWs,setRenameWs]   = useState(false);
   const[renameVal,setRenameVal] = useState("");
+  const[wsActsEdit,setWsActsEdit]     = useState(null);
+  const[wsActsSaving,setWsActsSaving] = useState(false);
+  const[teamActsEdit,setTeamActsEdit] = useState(null);
   // ── teams / seasons ───────────────────────────────────────────────────────
   const[teamView,setTeamView]   = useState("list");
   const[activeTeam,setActiveTeam] = useState(null);
@@ -186,7 +190,7 @@ export default function App(){
       const uMap={};for(const u of uR.data||[])uMap[u.id]={name:u.name,dob:u.dob};setWsUsers(uMap);
       const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
       const gMap={};for(const g of gR.data||[])gMap[g.user_id]=g.weekly_goal;setGoals(gMap);
-      const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code};setTeams(tMap);
+      const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code,selected_acts:t.selected_acts||null};
       const tIds=Object.keys(tMap),mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
       if(stR.data?.length>0)setPts({...DEFAULT_PTS,...stR.data[0].value});
@@ -300,6 +304,23 @@ export default function App(){
     if(error){setErr("Přejmenování selhalo.");return;}
     setKnownWs(w=>w.map(x=>x.id===activeWsId?{...x,name:renameVal.trim()}:x));
     setRenameWs(false);
+  }
+
+  async function saveWsActs(acts){
+    setWsActsSaving(true);
+    const val=acts.length===AM.length?null:acts;
+    const{error:e}=await supabase.from("workspaces").update({selected_acts:val}).eq("id",activeWsId);
+    if(e){setErr("Uložení selhalo.");setWsActsSaving(false);return;}
+    setKnownWs(kw=>kw.map(w=>w.id===activeWsId?{...w,selected_acts:val}:w));
+    setWsActsEdit(null);setWsActsSaving(false);
+  }
+
+  async function saveTeamActs(teamId,acts){
+    const val=acts.length===AM.length?null:acts;
+    const{error:e}=await supabase.from("teams").update({selected_acts:val}).eq("id",teamId);
+    if(e){setErr("Uložení selhalo.");return;}
+    setTeams(t=>({...t,[teamId]:{...t[teamId],selected_acts:val}}));
+    setTeamActsEdit(null);
   }
 
   // ── entry ops ─────────────────────────────────────────────────────────────
@@ -448,6 +469,11 @@ export default function App(){
     if(!window.confirm(`Opravdu smazat výzvu "${seasons[id]?.name}"?`))return;
     await supabase.from("seasons").delete().eq("id",id);
     setSeasons(s=>{const n={...s};delete n[id];return n;});
+  }
+
+  function getVisibleActs(selected_acts){
+    if(!selected_acts||!selected_acts.length) return AM;
+    return AM.filter(a=>selected_acts.includes(a.key));
   }
 
   function buildLB(filterIds,fromDate,toDate){
@@ -854,7 +880,7 @@ export default function App(){
         </div>
         <div className="bf-label" style={{marginBottom:8}}>Vítězové disciplín</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-          {AM.filter(a=>actW[a.key]).sort((a,b)=>actW[b.key].val-actW[a.key].val).map(a=>(
+          {getVisibleActs(activeWs?.selected_acts).filter(a=>actW[a.key]).sort((a,b)=>actW[b.key].val-actW[a.key].val).map(a=>(
             <div key={a.key} className="bf-card" style={{padding:"10px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><div className="bf-act-icon" style={{width:26,height:26,borderRadius:6,fontSize:11,background:a.color+"20",color:a.color}}>{a.icon}</div><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.label}</span></div>
               <p style={{margin:"0 0 2px",fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{actW[a.key].name}</p>
@@ -917,6 +943,41 @@ export default function App(){
             </div>
             {actS&&tMids.includes(uid)&&actS.created_by===uid&&<button onClick={()=>{deleteSeason(tSeason.slice(7));setTSeason("all");}} className="bf-btn-danger" style={{marginTop:8,padding:"5px 12px",fontSize:11}}>Smazat výzvu</button>}
           </div>
+          {/* aktivity týmu */}
+          <div style={{marginBottom:"1rem"}}>
+            <div className="bf-section-header" style={{marginBottom:8}}>
+              <div className="bf-label" style={{margin:0}}>Aktivity týmu</div>
+              {team.created_by===uid&&teamActsEdit===null&&(
+                <button onClick={()=>setTeamActsEdit(team.selected_acts||AM.map(a=>a.key))} className="bf-btn-out" style={{fontSize:11}}>Upravit</button>
+              )}
+            </div>
+            {teamActsEdit!==null?(
+              <>
+                <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
+                  {AM.map(a=>{
+                    const checked=teamActsEdit.includes(a.key);
+                    return(
+                      <label key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:checked?"var(--bf-accent-dim)":"var(--bf-surface2)",border:`1.5px solid ${checked?"var(--bf-accent)":"var(--bf-border-md)"}`,borderRadius:"var(--bf-r-md)",cursor:"pointer"}}>
+                        <input type="checkbox" checked={checked} onChange={e=>{if(e.target.checked)setTeamActsEdit(v=>[...v,a.key]);else setTeamActsEdit(v=>v.filter(k=>k!==a.key));}} style={{accentColor:"var(--bf-accent)",width:16,height:16,flexShrink:0}}/>
+                        <div className="bf-act-icon" style={{width:26,height:26,borderRadius:6,fontSize:11,background:a.color+"20",color:a.color}}>{a.icon}</div>
+                        <span style={{fontSize:13,fontWeight:600,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>saveTeamActs(activeTeam,teamActsEdit)} disabled={teamActsEdit.length===0} className="bf-btn" style={{flex:1}}>Uložit</button>
+                  <button onClick={()=>setTeamActsEdit(null)} className="bf-btn-ghost">Zrušit</button>
+                </div>
+              </>
+            ):(
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {getVisibleActs(team.selected_acts).map(a=>(
+                  <span key={a.key} style={{fontSize:11,background:a.color+"20",color:a.color,padding:"3px 10px",borderRadius:20,fontWeight:700,fontFamily:"var(--bf-font)"}}>{a.label}</span>
+                ))}
+              </div>
+            )}
+          </div>
           {tSeason==="all"&&<div className="bf-chips">{[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setTPeriod(k)} className={`bf-chip${tPeriod===k?" active":""}`}>{l}</button>))}</div>}
           {actS&&<div className="bf-surface" style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:10}}><span className={`bf-badge ${seasonLabel(actS).cls}`}>{seasonLabel(actS).text}</span><div style={{flex:1}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{actS.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{actS.start_date} → {actS.end_date}</p></div>{seasonStatus(actS)==="active"&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>zbývá {daysLeft(actS)} dní</span>}</div>}
           {myRank>0&&<div className="bf-surface-accent" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)",fontWeight:600}}>Tvoje pořadí</span><span style={{fontSize:26,fontWeight:800,fontFamily:"var(--bf-mono)",color:"var(--bf-accent)"}}>#{myRank}</span><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)"}}>z {sorted.length}</span></div>}
@@ -926,7 +987,7 @@ export default function App(){
             {sorted.map(([id,d],i)=>(<div key={id} className={`bf-lb-row${id===uid?" me":""}`}><span style={{fontSize:17,minWidth:30,color:RANK_CLR[i]||"var(--bf-text3)",fontWeight:800,fontFamily:"var(--bf-mono)"}}>{MEDALS[i]||`${i+1}.`}</span><div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div><span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span><span style={{fontSize:10,color:"var(--bf-text3)"}}>b</span></div>))}
           </div></>}
           {tTab==="activity"&&<><div className="bf-label" style={{marginBottom:8}}>Porovnání aktivit</div>
-            {AM.map(a=>{const vals=sorted.map(([id,d])=>({name:d.name,val:d.acts[a.key]||0,isMe:id===uid})).sort((x,y)=>y.val-x.val);const mx=Math.max(...vals.map(v=>v.val),1);if(vals.every(v=>v.val===0))return null;return(
+            {getVisibleActs(team.selected_acts).map(a=>{const vals=sorted.map(([id,d])=>({name:d.name,val:d.acts[a.key]||0,isMe:id===uid})).sort((x,y)=>y.val-x.val);const mx=Math.max(...vals.map(v=>v.val),1);if(vals.every(v=>v.val===0))return null;return(
               <div key={a.key} className="bf-card" style={{marginBottom:"0.75rem"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div className="bf-act-icon" style={{width:30,height:30,borderRadius:7,fontSize:12,background:a.color+"20",color:a.color}}>{a.icon}</div><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p></div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -977,6 +1038,44 @@ export default function App(){
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{activeWs?.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.1em"}}>Kód: {activeWs?.code}</p></div>
               <button onClick={()=>activeWs?.code&&navigator.clipboard.writeText(activeWs.code)} className="bf-btn-out" style={{fontSize:11}}>Kopírovat kód</button>
+            </div>
+          )}
+        </div>
+
+        {/* aktivity skupiny */}
+        <div className="bf-card" style={{marginBottom:"1rem"}}>
+          <div className="bf-section-header" style={{marginBottom:8}}>
+            <div className="bf-label" style={{margin:0}}>Aktivity skupiny</div>
+            {isWsCreator&&wsActsEdit===null&&(
+              <button onClick={()=>setWsActsEdit(activeWs?.selected_acts||AM.map(a=>a.key))} className="bf-btn-out" style={{fontSize:11}}>Upravit</button>
+            )}
+          </div>
+          {wsActsEdit!==null?(
+            <>
+              <p style={{margin:"0 0 10px",fontSize:12,color:"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>Vyber aktivity pro žebříček skupiny:</p>
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                {AM.map(a=>{
+                  const checked=wsActsEdit.includes(a.key);
+                  return(
+                    <label key={a.key} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:checked?"var(--bf-accent-dim)":"var(--bf-surface2)",border:`1.5px solid ${checked?"var(--bf-accent)":"var(--bf-border-md)"}`,borderRadius:"var(--bf-r-md)",cursor:"pointer"}}>
+                      <input type="checkbox" checked={checked} onChange={e=>{if(e.target.checked)setWsActsEdit(v=>[...v,a.key]);else setWsActsEdit(v=>v.filter(k=>k!==a.key));}} style={{accentColor:"var(--bf-accent)",width:16,height:16,flexShrink:0}}/>
+                      <div className="bf-act-icon" style={{width:28,height:28,borderRadius:6,fontSize:12,background:a.color+"20",color:a.color}}>{a.icon}</div>
+                      <span style={{fontSize:13,fontWeight:600,fontFamily:"var(--bf-font)",color:"var(--bf-text)",flex:1}}>{a.label}</span>
+                      <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{DEFAULT_PTS[a.key]} b/{a.unit}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>saveWsActs(wsActsEdit)} disabled={wsActsSaving||wsActsEdit.length===0} className="bf-btn" style={{flex:1}}>{wsActsSaving?"Ukládám…":"Uložit"}</button>
+                <button onClick={()=>setWsActsEdit(null)} className="bf-btn-ghost">Zrušit</button>
+              </div>
+            </>
+          ):(
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {getVisibleActs(activeWs?.selected_acts).map(a=>(
+                <span key={a.key} style={{fontSize:11,background:a.color+"20",color:a.color,padding:"3px 10px",borderRadius:20,fontWeight:700,fontFamily:"var(--bf-font)"}}>{a.label}</span>
+              ))}
             </div>
           )}
         </div>
