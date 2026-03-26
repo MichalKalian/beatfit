@@ -4,12 +4,12 @@ import "./beatfit.css";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
-const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8,pivoMale:-3,pivoVelke:-5,vino:-6,panak:-8 };
+const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,drepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8,pivoMale:-3,pivoVelke:-5,vino:-6,panak:-8 };
 const AM = [
   {key:"shyby",    label:"Shyby",      sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
   {key:"anglicky", label:"Angličáky",  sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},
   {key:"kliky",    label:"Kliky",      sub:"push-ups", unit:"ks", icon:"▲",color:"#38bdf8"},
-  {key:"dreepy",   label:"Dřepy",      sub:"squats",   unit:"ks", icon:"↓",color:"#34d399"},
+  {key:"drepy",    label:"Dřepy",      sub:"squats",   unit:"ks", icon:"↓",color:"#34d399"},
   {key:"sedLehy",  label:"Sed-lehy",   sub:"sit-ups",  unit:"ks", icon:"↔",color:"#a3e635"},
   {key:"behKm",    label:"Běh",        sub:"km",       unit:"km", icon:"▶",color:"#fbbf24"},
   {key:"koloKm",   label:"Kolo",       sub:"km",       unit:"km", icon:"○",color:"#fb7185"},
