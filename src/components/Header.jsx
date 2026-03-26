@@ -2,6 +2,7 @@ import React from "react";
 
 export default function Header(props){
   const {userMeta,knownWs,activeWs,activeWsId,wsDropOpen,setWsDropOpen,switchWs,setStep,logout,loading,setAddWsMode,view,setView,setTeamView} = props;
+  const {openPrefs} = props;
 
   const WsDropdown = ()=> (
     <div style={{position:"relative"}}>
@@ -37,7 +38,10 @@ export default function Header(props){
           <div className="bf-label" style={{marginBottom:1}}>{userMeta?.name}</div>
           <WsDropdown/>
         </div>
-        {loading&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Načítám…</span>}
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>openPrefs&&openPrefs()} className="bf-btn-sm">⚙</button>
+          {loading&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Načítám…</span>}
+        </div>
       </div>
       <div className="bf-nav">
         {[["log","Záznam"],["leaderboard","Žebříček"],["teams","Týmy"],["stats","Moje"]].map(([v,l])=> (

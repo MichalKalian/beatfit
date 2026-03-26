@@ -1,5 +1,6 @@
 import React from "react";
 import { SFormCard } from "./Misc";
+import { computeEffectiveCap } from "../lib/helpers";
 
 export default function TeamDetail(props){
   const {
@@ -41,6 +42,7 @@ export default function TeamDetail(props){
     RANK_CLR,
     fmtVal,
   } = props;
+  const { prefs } = props;
 
   const team = teams[activeTeam];
   if(!team){ setTeamView("list"); return null; }
@@ -58,12 +60,19 @@ export default function TeamDetail(props){
       let sc2 = 0;
       const acts = {};
       for(const a of AM) acts[a.key]=0;
+      const teamSelected = prefs?.selectedActs?.teams?.[activeTeam];
+      const visibleActKeys = (teamSelected && teamSelected.length)? teamSelected : (prefs?.selectedActs?.ws && prefs.selectedActs.ws.length)?prefs.selectedActs.ws : null;
       for(const [date,e] of Object.entries(days)){
         if(actS){ if(date<actS.start_date||date>actS.end_date) continue; }
         else { if(tPeriod==="today"&&date!==t2) continue; if(tPeriod==="week"&&date<w2) continue; }
-        sc2 += calcScore(e, calcAge(u.dob), pts);
+        sc2 += calcScore(e, calcAge(u.dob), pts, visibleActKeys);
         for(const a of AM) acts[a.key] += parseFloat(e[a.key])||0;
       }
+      // apply viewer limit via helper if available
+      try{
+        const cap = computeEffectiveCap(prefs?.limit, actS?{fromDate:actS.start_date,toDate:actS.end_date}:{period: tPeriod});
+        if(cap!=null) sc2 = Math.min(sc2, cap);
+      }catch(e){}
       res[id] = { sc: sc2, name: u.name, dob: u.dob, acts };
     }
     return res;

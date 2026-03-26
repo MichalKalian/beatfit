@@ -1,13 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./beatfit.css";
 import { DEFAULT_PTS, AM, getActs, calcAge, ageMult, calcScore, todayStr, weekAgoStr, dMinus, calcStreak, randCode, fmtVal, exportCSV, seasonStatus, seasonLabel, daysLeft, MEDALS, RANK_CLR } from "./lib/helpers";
+import { computeEffectiveCap } from "./lib/helpers";
 import { Err, SFormCard } from "./components/Misc";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import TeamsList from "./components/TeamsList";
 import TeamCreate from "./components/TeamCreate";
 import TeamDetail from "./components/TeamDetail";
+import Prefs from "./components/Prefs";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
@@ -61,6 +63,46 @@ export default function App(){
   const[wsActsEdit,setWsActsEdit]     = useState(null);
   const[wsActsSaving,setWsActsSaving] = useState(false);
   const[teamActsEdit,setTeamActsEdit] = useState(null);
+  // user preferences (localStorage-backed)
+  const [prefs,setPrefs] = useState(()=>{
+    try{const s=localStorage.getItem('bf_prefs');if(s)return JSON.parse(s);}catch(e){}
+    return {limit:{enabled:false,period:'day',value:100},selectedActs:{ws:[],teams:{}}};
+  });
+  const [prefsOpen,setPrefsOpen] = useState(false);
+  // refs for debounced DB save and skip-on-load behavior
+  const saveTimeoutRef = useRef(null);
+  const skipSaveRef = useRef(false);
+
+  // load prefs from DB with fallback: team -> workspace -> global
+  const loadPrefsFromDb = async ()=>{
+    if(!uid) return;
+    try{
+      // try team-specific
+      const order = [ {team_id: activeTeam, workspace_id: activeWsId}, {team_id: null, workspace_id: activeWsId}, {team_id: null, workspace_id: null} ];
+      for(const q of order){
+        let builder = supabase.from('user_prefs').select('*').eq('user_id', uid);
+        if(q.team_id===null) builder = builder.is('team_id', null); else if(q.team_id) builder = builder.eq('team_id', q.team_id);
+        if(q.workspace_id===null) builder = builder.is('workspace_id', null); else if(q.workspace_id) builder = builder.eq('workspace_id', q.workspace_id);
+        const { data, error } = await builder.maybeSingle();
+        if(error){ continue; }
+        if(data && data.prefs){
+          skipSaveRef.current = true;
+          setPrefs(data.prefs);
+          return;
+        }
+      }
+    }catch(e){ setErr("Načtení preferencí selhalo."); }
+  };
+
+  // upsert prefs (debounced by effect below)
+  const upsertPrefsToDb = async (p)=>{
+    if(!uid) return;
+    try{
+      const row = { user_id: uid, workspace_id: activeWsId||null, team_id: activeTeam||null, prefs: p };
+      const { error } = await supabase.from('user_prefs').upsert(row, { onConflict: 'user_id,workspace_id,team_id' });
+      if(error) setErr('Uložení preferencí selhalo.');
+    }catch(e){ setErr('Uložení preferencí selhalo.'); }
+  };
   // ── teams / seasons ───────────────────────────────────────────────────────
   const[teamView,setTeamView]   = useState("list");
   const[activeTeam,setActiveTeam] = useState(null);
@@ -196,6 +238,22 @@ export default function App(){
       localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:data.id}));
       setStep("app");return;
     }
+
+    // load prefs when context/user changes
+    useEffect(()=>{
+      if(!uid) return;
+      loadPrefsFromDb();
+    },[uid, activeWsId, activeTeam]);
+
+    // debounce prefs -> localStorage + DB upsert
+    useEffect(()=>{
+      if(!uid) return;
+      if(skipSaveRef.current){ skipSaveRef.current = false; return; }
+      try{ localStorage.setItem('bf_prefs', JSON.stringify(prefs)); }catch(e){}
+      if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(()=>{ upsertPrefsToDb(prefs); }, 700);
+      return ()=>{ if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+    },[prefs, uid, activeWsId, activeTeam]);
     await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
     setKnownWs(w=>[...w,data]);
     setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
@@ -387,16 +445,26 @@ export default function App(){
     return AM.filter(a=>selected_acts.includes(a.key));
   }
 
-  function buildLB(filterIds,fromDate,toDate){
+  function buildLB(filterIds,fromDate,toDate,opts={}){
     const t=todayStr(),w=weekAgoStr(),res={};
+    const spanInfo = opts.spanInfo || (fromDate&&toDate?{fromDate,toDate}:{period: period});
     for(const[id,days] of Object.entries(entries)){
       if(filterIds&&!filterIds.includes(id))continue;
       const u=wsUsers[id];if(!u)continue;
-      let sc=0;const acts={};for(const a of AM)acts[a.key]=0;
+      let sc=0;const acts={};
+      // choose visible acts based on opts.selectedActs (array of keys) or default all
+      const visibleActKeys = opts.selectedActs&&opts.selectedActs.length?opts.selectedActs:null;
+      for(const a of AM)acts[a.key]=0;
       for(const[date,e] of Object.entries(days)){
         if(fromDate&&toDate){if(date<fromDate||date>toDate)continue;}
         else{if(period==="today"&&date!==t)continue;if(period==="week"&&date<w)continue;}
-        sc+=calcScore(e,calcAge(u.dob),pts);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;
+        sc+=calcScore(e,calcAge(u.dob),pts,visibleActKeys);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;
+      }
+      // apply viewer limit cap if provided
+      if(opts.limit?.enabled){
+        // compute effective cap via helper if available
+        const cap = (typeof computeEffectiveCap!=='undefined')? computeEffectiveCap(opts.limit, spanInfo) : null;
+        if(cap!=null) sc = Math.min(sc, cap);
       }
       res[id]={sc,name:u.name,dob:u.dob,acts};
     }
@@ -702,7 +770,7 @@ export default function App(){
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/><Err err={err} setErr={setErr}/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/><Err err={err} setErr={setErr}/>
         <input type="date" value={logDate} max={todayStr()} onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}} className="bf-inp bf-inp-mono" style={{marginBottom:"1rem",textAlign:"center",fontSize:14}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Skóre",v:score.toFixed(1)},{l:"Věk. koef.",v:`×${ageMult(age).toFixed(2)}`},{l:"Řada",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
@@ -747,16 +815,18 @@ export default function App(){
   // ══ LEADERBOARD ══════════════════════════════════════════════════════════
   if(view==="leaderboard"){
     const actS=lbMode.startsWith("season:")?seasons[lbMode.slice(7)]:null;
-    const lb=actS?buildLB(null,actS.start_date,actS.end_date):buildLB();
+    const selectedActsForWs = (prefs.selectedActs&&prefs.selectedActs.ws&&prefs.selectedActs.ws.length)?prefs.selectedActs.ws:null;
+    const spanInfo = actS? {fromDate:actS.start_date,toDate:actS.end_date} : {period: period};
+    const lb=actS?buildLB(null,actS.start_date,actS.end_date,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo}):buildLB(null,null,null,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo});
     const sorted=Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc);
     const myRank=sorted.findIndex(([id])=>id===uid)+1;
     const actW={};
     for(const a of AM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
         <Err err={err} setErr={setErr}/>
-        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} />
+        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} />
       </div>
     );
   }
@@ -765,7 +835,7 @@ export default function App(){
   if(view==="teams"){
     if(teamView==="list")return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
         <Err err={err} setErr={setErr}/>
         <TeamsList myTeamIds={myTeamIds} teams={teams} members={members} seasons={seasons} uid={uid} setActiveTeam={setActiveTeam} setTeamView={setTeamView} setTTab={setTTab} setTSeason={setTSeason} setShowTSF={setShowTSF} />
       </div>
@@ -779,10 +849,10 @@ export default function App(){
     );
     if(teamView==="detail"&&activeTeam){
       return (
-        <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-          <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
-          <Err err={err} setErr={setErr}/>
-          <TeamDetail
+          <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+            <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
+            <Err err={err} setErr={setErr}/>
+            <TeamDetail
             activeTeam={activeTeam}
             teams={teams}
             seasons={seasons}
@@ -820,7 +890,9 @@ export default function App(){
             MEDALS={MEDALS}
             RANK_CLR={RANK_CLR}
             fmtVal={fmtVal}
+              prefs={prefs}
           />
+            {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />} 
         </div>
       );
     }
@@ -840,7 +912,7 @@ export default function App(){
     const maxSc=Math.max(...cScores,1);
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/><Err err={err} setErr={setErr}/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/><Err err={err} setErr={setErr}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Celkem bodů",v:total.toFixed(0)},{l:"Aktivní dny",v:dates.length},{l:"Streak",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
             <div key={l} className="bf-stat"><div className="bf-label" style={{marginBottom:4}}>{l}</div><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"var(--bf-mono)",color:c||"var(--bf-text)"}}>{v}</p></div>

@@ -24,12 +24,13 @@ export const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key
 
 export function calcAge(dob){if(!dob)return 30;const b=new Date(dob),t=new Date();let a=t.getFullYear()-b.getFullYear();if(t<new Date(t.getFullYear(),b.getMonth(),b.getDate()))a--;return a;}
 export function ageMult(age){const a=parseInt(age)||30;if(a>=30)return 1+(a-30)*0.015;return Math.max(0.85,1-(30-a)*0.005);}
-export function calcScore(e,age,pts){
-  if(!e)return 0;
-  const acts=getActs(pts);
-  const positive=acts.filter(a=>!a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0)*ageMult(age);
-  const negative=acts.filter(a=>a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0);
-  return positive+negative;
+export function calcScore(e,age,pts,actKeys=null){
+  if(!e) return 0;
+  let acts = getActs(pts);
+  if(Array.isArray(actKeys) && actKeys.length) acts = acts.filter(a=>actKeys.includes(a.key));
+  const positive = acts.filter(a=>!a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0) * ageMult(age);
+  const negative = acts.filter(a=>a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0);
+  return positive + negative;
 }
 export function todayStr(){return new Date().toISOString().split("T")[0];}
 export function weekAgoStr(){const d=new Date();d.setDate(d.getDate()-7);return d.toISOString().split("T")[0];}
@@ -50,3 +51,41 @@ export function daysLeft(s){return Math.ceil((new Date(s.end_date)-new Date(toda
 
 export const MEDALS=["🥇","🥈","🥉"];
 export const RANK_CLR=["#f59e0b","#94a3b8","#b87333"];
+
+export function daysBetweenInclusive(from, to){
+  const a = new Date(from);
+  const b = new Date(to);
+  return Math.max(0, Math.floor((b - a) / (1000*60*60*24)) + 1);
+}
+
+// Compute effective cap (max points) for a given viewer limit setting and the viewed span.
+// limit: {enabled, period: 'day'|'week'|'month', value}
+// spanInfo: { period: 'today'|'week'|'all', fromDate?, toDate? }
+export function computeEffectiveCap(limit, spanInfo){
+  if(!limit||!limit.enabled) return null;
+  const {period, fromDate, toDate} = spanInfo||{};
+  let days = null;
+  if(fromDate && toDate){ days = daysBetweenInclusive(fromDate,toDate); }
+  else if(period==="today") days = 1;
+  else if(period==="week") days = 7;
+  else if(period==="all") days = null;
+
+  // If user set daily limit, scale by days when possible
+  if(limit.period==="day"){
+    if(days!=null) return limit.value * days;
+    return null;
+  }
+  // If user set weekly limit and we have days, scale by number of weeks
+  if(limit.period==="week"){
+    if(days!=null) return limit.value * Math.ceil(days/7);
+    if(period==="week") return limit.value;
+    return null;
+  }
+  // If user set monthly limit and we have days, scale by months (~30d)
+  if(limit.period==="month"){
+    if(days!=null) return limit.value * Math.ceil(days/30);
+    if(period==="month") return limit.value;
+    return null;
+  }
+  return null;
+}
