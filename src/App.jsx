@@ -4,27 +4,37 @@ import "./beatfit.css";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
-const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8 };
+const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8,pivoMale:-3,pivoVelke:-5,vino:-6,panak:-8 };
 const AM = [
-  {key:"shyby",   label:"Shyby",    sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
-  {key:"anglicky",label:"Angličáky",sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},
-  {key:"kliky",   label:"Kliky",    sub:"push-ups", unit:"ks", icon:"▲",color:"#38bdf8"},
-  {key:"dreepy",  label:"Dřepy",    sub:"squats",   unit:"ks", icon:"↓",color:"#34d399"},
-  {key:"sedLehy", label:"Sed-lehy", sub:"sit-ups",  unit:"ks", icon:"↔",color:"#a3e635"},
-  {key:"behKm",   label:"Běh",      sub:"km",       unit:"km", icon:"▶",color:"#fbbf24"},
-  {key:"koloKm",  label:"Kolo",     sub:"km",       unit:"km", icon:"○",color:"#fb7185"},
-  {key:"plankSec",label:"Plank",    sub:"sekund",   unit:"s",  icon:"—",color:"#e879f9"},
-  {key:"kroky",   label:"Kroky",    sub:"steps",    unit:"kr", icon:"◆",color:"#06b6d4"},
-  {key:"silovy",  label:"Silový tr.",sub:"strength", unit:"min",icon:"◉",color:"#f43f5e"},
-  {key:"plavani", label:"Plavání",   sub:"swim",     unit:"km", icon:"~",color:"#0ea5e9"},
-  {key:"veslovani",label:"Veslování",sub:"rowing",   unit:"km", icon:"↑",color:"#8b5cf6"},
-  {key:"kardio",  label:"Kardio",    sub:"cardio",   unit:"min",icon:"♥",color:"#10b981"},
+  {key:"shyby",    label:"Shyby",      sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
+  {key:"anglicky", label:"Angličáky",  sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},
+  {key:"kliky",    label:"Kliky",      sub:"push-ups", unit:"ks", icon:"▲",color:"#38bdf8"},
+  {key:"dreepy",   label:"Dřepy",      sub:"squats",   unit:"ks", icon:"↓",color:"#34d399"},
+  {key:"sedLehy",  label:"Sed-lehy",   sub:"sit-ups",  unit:"ks", icon:"↔",color:"#a3e635"},
+  {key:"behKm",    label:"Běh",        sub:"km",       unit:"km", icon:"▶",color:"#fbbf24"},
+  {key:"koloKm",   label:"Kolo",       sub:"km",       unit:"km", icon:"○",color:"#fb7185"},
+  {key:"plankSec", label:"Plank",      sub:"sekund",   unit:"s",  icon:"—",color:"#e879f9"},
+  {key:"kroky",    label:"Kroky",      sub:"steps",    unit:"kr", icon:"◆",color:"#06b6d4"},
+  {key:"silovy",   label:"Silový tr.", sub:"strength", unit:"min",icon:"◉",color:"#f43f5e"},
+  {key:"plavani",  label:"Plavání",    sub:"swim",     unit:"km", icon:"~",color:"#0ea5e9"},
+  {key:"veslovani",label:"Veslování",  sub:"rowing",   unit:"km", icon:"↑",color:"#8b5cf6"},
+  {key:"kardio",   label:"Kardio",     sub:"cardio",   unit:"min",icon:"♥",color:"#10b981"},
+  {key:"pivoMale", label:"Malé pivo",  sub:"0.3l",     unit:"ks", icon:"🍺",color:"#ef4444",negative:true},
+  {key:"pivoVelke",label:"Velké pivo", sub:"0.5l",     unit:"ks", icon:"🍺",color:"#dc2626",negative:true},
+  {key:"vino",     label:"Víno",       sub:"2dcl",     unit:"ks", icon:"🍷",color:"#b91c1c",negative:true},
+  {key:"panak",    label:"Panák",      sub:"tvrdý",    unit:"ks", icon:"🥃",color:"#991b1b",negative:true},
 ];
 
 const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key]}));
 function calcAge(dob){if(!dob)return 30;const b=new Date(dob),t=new Date();let a=t.getFullYear()-b.getFullYear();if(t<new Date(t.getFullYear(),b.getMonth(),b.getDate()))a--;return a;}
 function ageMult(age){const a=parseInt(age)||30;if(a>=30)return 1+(a-30)*0.015;return Math.max(0.85,1-(30-a)*0.005);}
-function calcScore(e,age,pts){if(!e)return 0;return getActs(pts).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0)*ageMult(age);}
+function calcScore(e,age,pts){
+  if(!e)return 0;
+  const acts=getActs(pts);
+  const positive=acts.filter(a=>!a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0)*ageMult(age);
+  const negative=acts.filter(a=>a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0);
+  return positive+negative;
+}
 function todayStr(){return new Date().toISOString().split("T")[0];}
 function weekAgoStr(){const d=new Date();d.setDate(d.getDate()-7);return d.toISOString().split("T")[0];}
 function dMinus(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];}
@@ -801,11 +811,26 @@ export default function App(){
         </div>
         {weekGoal>0&&<div className="bf-surface" style={{marginBottom:"1rem"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div className="bf-label" style={{margin:0}}>Týdenní cíl</div><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text2)"}}>{weekScore.toFixed(0)} / {weekGoal} b</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${goalPct}%`,background:goalPct>=100?"var(--bf-success)":"var(--bf-accent)"}}/></div>{goalPct>=100&&<p style={{margin:"8px 0 0",fontSize:12,color:"var(--bf-success)",fontWeight:700,fontFamily:"var(--bf-font)"}}>Cíl splněn! 🎉</p>}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {ACTS.map(a=>(
+          {ACTS.filter(a=>!a.negative).map(a=>(
             <div key={a.key} className="bf-act-row">
               <div className="bf-act-icon" style={{background:a.color+"20",color:a.color}}>{a.icon}</div>
               <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.pts} b/{a.unit} · {a.sub}</p></div>
               <input type="number" min="0" step={a.unit==="km"?"0.1":"1"} value={form[a.key]||""} placeholder="—" onChange={e=>setForm(f=>({...f,[a.key]:e.target.value}))} className="bf-act-num"/>
+              <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",minWidth:20}}>{a.unit}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:"1.25rem",marginBottom:"0.5rem",display:"flex",alignItems:"center",gap:8}}>
+          <div style={{flex:1,height:"1.5px",background:"var(--bf-border)"}}/>
+          <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",color:"var(--bf-danger)",fontFamily:"var(--bf-font)",textTransform:"uppercase"}}>Alkohol 🍺 −body</span>
+          <div style={{flex:1,height:"1.5px",background:"var(--bf-border)"}}/>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {ACTS.filter(a=>a.negative).map(a=>(
+            <div key={a.key} className="bf-act-row" style={{borderColor:"var(--bf-danger-dim)"}}>
+              <div className="bf-act-icon" style={{background:a.color+"15",color:a.color,fontSize:16}}>{a.icon}</div>
+              <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.pts} b/{a.unit} · {a.sub}</p></div>
+              <input type="number" min="0" step="1" value={form[a.key]||""} placeholder="—" onChange={e=>setForm(f=>({...f,[a.key]:e.target.value}))} className="bf-act-num" style={{borderColor:"var(--bf-danger-dim)"}}/>
               <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",minWidth:20}}>{a.unit}</span>
             </div>
           ))}
@@ -830,7 +855,14 @@ export default function App(){
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <TopBar/><Nav/><Err/>
-        {lbMode==="global"?(<div className="bf-chips">{[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`bf-chip${period===k?" active":""}`}>{l}</button>))}</div>):(
+        {lbMode==="global"?(
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:"1rem"}}>
+            <div className="bf-chips" style={{flex:1,marginBottom:0}}>
+              {[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`bf-chip${period===k?" active":""}`}>{l}</button>))}
+            </div>
+            <button onClick={()=>loadWsData(activeWsId,uid)} style={{flexShrink:0,padding:"8px 12px",background:"var(--bf-surface2)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",cursor:"pointer",fontSize:16,lineHeight:1}} title="Obnovit">↻</button>
+          </div>
+        ):(
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem",padding:"10px 14px",background:"var(--bf-surface2)",borderRadius:"var(--bf-r-md)",border:"1.5px solid var(--bf-border)"}}>
             <button onClick={()=>setLbMode("global")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
             <div style={{flex:1}}><p style={{margin:0,fontSize:14,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{actS?.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{actS?.start_date} → {actS?.end_date}</p></div>
