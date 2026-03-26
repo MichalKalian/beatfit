@@ -425,7 +425,6 @@ export default function App(){
                         <div className="bf-av" style={{width:36,height:36,fontSize:14}}>{u.name[0]}</div>
                         <span style={{fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)",fontSize:15,flex:1,textAlign:"left"}}>{u.name}</span>
                         {streak>1&&<span className="bf-badge bf-badge-accent" style={{fontSize:11}}>{streak}🔥</span>}
-                        <span style={{fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{calcAge(u.dob)} let</span>
                         <span style={{color:"var(--bf-text3)",fontSize:16,fontFamily:"var(--bf-font)"}}>{sel?"↑":"›"}</span>
                       </button>
                       {sel&&(
