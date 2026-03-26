@@ -620,7 +620,7 @@ export default function App(){
         </div>
       </>}
 
-      <div style={{height:"1.5px",background:"var(--bf-border)",marginBottom:"1rem"}}}/>
+      <div style={{height:"1.5px",background:"var(--bf-border)",marginBottom:"1rem"}}/>
       <div className="bf-label" style={{marginBottom:8}}>Přidat novou skupinu</div>
       <div style={{display:"flex",gap:6,marginBottom:"1rem"}}>
         <button onClick={()=>setAddWsMode(m=>m==="code"?null:"code")}
