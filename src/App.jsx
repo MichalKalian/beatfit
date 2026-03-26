@@ -766,7 +766,8 @@ export default function App(){
   if(view==="log"){
     const age=calcAge(userMeta?.dob),score=calcScore(form,age,pts),streak=calcStreak(entries[uid]||{});
     const weekGoal=parseFloat(goals[uid])||0;
-    const weekScore=Object.entries(entries[uid]||{}).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts),0);
+    const selectedActsForWs = (prefs.selectedActs&&prefs.selectedActs.ws&&prefs.selectedActs.ws.length)?prefs.selectedActs.ws:null;
+    const weekScore=Object.entries(entries[uid]||{}).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts,selectedActsForWs),0);
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
@@ -780,7 +781,7 @@ export default function App(){
         </div>
         {weekGoal>0&&<div className="bf-surface" style={{marginBottom:"1rem"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div className="bf-label" style={{margin:0}}>Týdenní cíl</div><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text2)"}}>{weekScore.toFixed(0)} / {weekGoal} b</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${goalPct}%`,background:goalPct>=100?"var(--bf-success)":"var(--bf-accent)"}}/></div>{goalPct>=100&&<p style={{margin:"8px 0 0",fontSize:12,color:"var(--bf-success)",fontWeight:700,fontFamily:"var(--bf-font)"}}>Cíl splněn! 🎉</p>}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {ACTS.filter(a=>!a.negative).map(a=>(
+          {ACTS.filter(a=>!a.negative&&(!selectedActsForWs||selectedActsForWs.includes(a.key))).map(a=>(
             <div key={a.key} className="bf-act-row">
               <div className="bf-act-icon" style={{background:a.color+"20",color:a.color}}>{a.icon}</div>
               <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.pts} b/{a.unit} · {a.sub}</p></div>
