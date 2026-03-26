@@ -231,8 +231,9 @@ export default function App(){
   async function doLogin(){
     if(!authName.trim()||!authPin){setAuthErr("Vyplň jméno a PIN.");return;}
     setAuthLoad(true);setAuthErr("");
-    const{data,error}=await supabase.from("users").select("*").ilike("name",authName.trim()).single();
-    if(error||!data){setAuthErr("Hráč s tímto jménem nebyl nalezen.");setAuthLoad(false);return;}
+    const{data:found,error}=await supabase.from("users").select("*").eq("name",authName.trim());
+    if(error||!found?.length){setAuthErr("Hráč s tímto jménem nebyl nalezen.");setAuthLoad(false);return;}
+    const data=found[0];
     if(data.pin!==authPin){setAuthErr("Nesprávný PIN.");setAuthLoad(false);return;}
     setUid(data.id);setUserMeta({name:data.name,dob:data.dob,pin:data.pin});
     const wsList=await loadUserWorkspaces(data.id);
