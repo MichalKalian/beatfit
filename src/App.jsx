@@ -153,10 +153,17 @@ export default function App(){
   }
 
   async function loadUserWorkspaces(userId){
-    const{data}=await supabase.from("workspace_members").select("workspace_id").eq("user_id",userId);
-    if(!data?.length)return[];
+    const{data,error}=await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("user_id",userId);
+    if(error||!data?.length)return[];
     const ids=data.map(r=>r.workspace_id);
-    const{data:ws}=await supabase.from("workspaces").select("*").in("id",ids);
+    const{data:ws,error:we}=await supabase
+      .from("workspaces")
+      .select("*")
+      .in("id",ids);
+    if(we)return[];
     return ws||[];
   }
 
@@ -203,22 +210,24 @@ export default function App(){
   async function addWsByCode(){
     if(!addWsCode.trim())return;
     setAddWsLoad(true);setAddWsErr("");
-    const{data,error}=await supabase.from("workspaces").select("*").eq("code",addWsCode.trim().toUpperCase()).single();
+    const{data,error}=await supabase.from("workspaces").select("*")
+      .eq("code",addWsCode.trim().toUpperCase()).single();
     if(error||!data){setAddWsErr("Kód skupiny nebyl nalezen.");setAddWsLoad(false);return;}
-    // check if already member (in state)
     if(knownWs.find(w=>w.id===data.id)){
+      // already member — just switch
       setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
-      await switchWs(data.id);return;
+      setActiveWsId(data.id);
+      await loadWsData(data.id,uid);
+      localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:data.id}));
+      setStep("app");return;
     }
-    // try insert — if duplicate, user is already member, just switch
-    const{error:me}=await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
-    if(me&&!me.message?.includes("duplicate")&&me.code!=="23505"){
-      setAddWsErr("Přidání do skupiny selhalo: "+me.message);setAddWsLoad(false);return;
-    }
-    const newList=[...knownWs.filter(w=>w.id!==data.id),data];
-    setKnownWs(newList);
+    await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
+    setKnownWs(w=>[...w,data]);
     setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
-    await switchWs(data.id);
+    setActiveWsId(data.id);
+    await loadWsData(data.id,uid);
+    localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:data.id}));
+    setStep("app");
   }
 
   async function addWsNew(){
@@ -238,17 +247,16 @@ export default function App(){
   async function doLogin(){
     if(!authName.trim()||!authPin){setAuthErr("Vyplň jméno a PIN.");return;}
     setAuthLoad(true);setAuthErr("");
-    const{data:found,error}=await supabase.from("users").select("*").eq("name",authName.trim());
-    if(error||!found?.length){setAuthErr("Hráč s tímto jménem nebyl nalezen.");setAuthLoad(false);return;}
-    const data=found[0];
+    const{data:found,error}=await supabase.from("users").select("*");
+    if(error){setAuthErr("Chyba při načítání.");setAuthLoad(false);return;}
+    const data=found?.find(u=>u.name.toLowerCase().trim()===authName.toLowerCase().trim());
+    if(!data){setAuthErr(`Hráč "${authName.trim()}" nebyl nalezen.`);setAuthLoad(false);return;}
     if(data.pin!==authPin){setAuthErr("Nesprávný PIN.");setAuthLoad(false);return;}
     setUid(data.id);setUserMeta({name:data.name,dob:data.dob,pin:data.pin});
     const wsList=await loadUserWorkspaces(data.id);
     setKnownWs(wsList);
     if(wsList.length===0){
-      // no workspaces yet — go to ws selection
-      const sess={userId:data.id,activeWsId:null,knownWsIds:[]};
-      localStorage.setItem(SK,JSON.stringify(sess));
+      localStorage.setItem(SK,JSON.stringify({userId:data.id,activeWsId:null}));
       setAuthLoad(false);setStep("ws-select");
     } else {
       const activeWs=wsList[0];
@@ -558,39 +566,77 @@ export default function App(){
     <div style={P}>
       <div style={{padding:"1.5rem 0 1rem"}}>
         <p style={{margin:"0 0 4px",fontSize:18,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Vítej, {userMeta?.name}!</p>
-        <p style={{margin:0,fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Vyber skupinu nebo vytvoř novou.</p>
+        <p style={{margin:0,fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Vyber skupinu nebo přidej novou.</p>
       </div>
+
       {knownWs.length>0&&<>
         <div className="bf-label" style={{marginBottom:8}}>Moje skupiny</div>
         <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1.5rem"}}>
           {knownWs.map(w=>(
-            <button key={w.id} onClick={async()=>{setActiveWsId(w.id);await loadWsData(w.id,uid);localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:w.id}));setStep("app");}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",cursor:"pointer",textAlign:"left"}}>
-              <div style={{width:40,height:40,borderRadius:"var(--bf-r-sm)",background:"var(--bf-accent-dim)",color:"var(--bf-accent-text)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,flexShrink:0,fontFamily:"var(--bf-font)"}}>{w.name[0]}</div>
-              <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{w.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.08em"}}>{w.code}</p></div>
+            <button key={w.id} onClick={async()=>{
+              setActiveWsId(w.id);
+              await loadWsData(w.id,uid);
+              localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:w.id}));
+              setStep("app");
+            }} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",
+              background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",
+              borderRadius:"var(--bf-r-md)",cursor:"pointer",textAlign:"left",
+              transition:"border-color 0.15s"}}>
+              <div style={{width:40,height:40,borderRadius:"var(--bf-r-sm)",
+                background:"var(--bf-accent-dim)",color:"var(--bf-accent-text)",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:16,fontWeight:700,flexShrink:0,fontFamily:"var(--bf-font)"}}>
+                {w.name[0]}
+              </div>
+              <div style={{flex:1}}>
+                <p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{w.name}</p>
+                <p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.08em"}}>{w.code}</p>
+              </div>
               <span style={{fontSize:20,color:"var(--bf-text3)"}}>›</span>
             </button>
           ))}
         </div>
       </>}
-      <div className="bf-label" style={{marginBottom:8}}>Přidat skupinu</div>
+
+      <div style={{height:"1.5px",background:"var(--bf-border)",marginBottom:"1rem"}}}/>
+      <div className="bf-label" style={{marginBottom:8}}>Přidat novou skupinu</div>
       <div style={{display:"flex",gap:6,marginBottom:"1rem"}}>
-        <button onClick={()=>setAddWsMode("code")} className={`bf-chip${addWsMode==="code"?" active":""}`}>Zadat kód</button>
-        <button onClick={()=>setAddWsMode("new")} className={`bf-chip${addWsMode==="new"?" active":""}`}>Vytvořit novou</button>
+        <button onClick={()=>setAddWsMode(m=>m==="code"?null:"code")}
+          className={`bf-chip${addWsMode==="code"?" active":""}`}>Zadat kód</button>
+        <button onClick={()=>setAddWsMode(m=>m==="new"?null:"new")}
+          className={`bf-chip${addWsMode==="new"?" active":""}`}>Vytvořit novou</button>
       </div>
+
       {addWsMode==="code"&&<div className="bf-card" style={{marginBottom:"1rem"}}>
         <div style={{display:"flex",gap:8,marginBottom:addWsErr?6:0}}>
-          <input placeholder="Kód skupiny" value={addWsCode} onChange={e=>{setAddWsCode(e.target.value.toUpperCase());setAddWsErr("");}} onKeyDown={e=>e.key==="Enter"&&addWsByCode()} className="bf-inp bf-inp-mono" style={{flex:1,fontSize:17,letterSpacing:"0.15em",textAlign:"center"}}/>
-          <button onClick={addWsByCode} disabled={addWsLoad||!addWsCode.trim()} className="bf-btn" style={{width:"auto",padding:"11px 18px",flexShrink:0}}>{addWsLoad?"…":"→"}</button>
+          <input placeholder="Kód skupiny" value={addWsCode}
+            onChange={e=>{setAddWsCode(e.target.value.toUpperCase());setAddWsErr("");}}
+            onKeyDown={e=>e.key==="Enter"&&addWsByCode()}
+            className="bf-inp bf-inp-mono"
+            style={{flex:1,fontSize:17,letterSpacing:"0.15em",textAlign:"center"}}/>
+          <button onClick={addWsByCode} disabled={addWsLoad||!addWsCode.trim()}
+            className="bf-btn" style={{width:"auto",padding:"11px 18px",flexShrink:0}}>
+            {addWsLoad?"…":"→"}
+          </button>
         </div>
         {addWsErr&&<p style={{margin:0,fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{addWsErr}</p>}
       </div>}
+
       {addWsMode==="new"&&<div className="bf-card" style={{marginBottom:"1rem"}}>
         <div className="bf-label" style={{marginBottom:4}}>Název skupiny</div>
-        <input placeholder="Např. Práce 2025, Kamarádi…" value={addWsName} onChange={e=>setAddWsName(e.target.value)} className="bf-inp" style={{marginBottom:10}} onKeyDown={e=>e.key==="Enter"&&addWsNew()}/>
+        <input placeholder="Např. Práce 2025, Kamarádi…" value={addWsName}
+          onChange={e=>setAddWsName(e.target.value)} className="bf-inp"
+          style={{marginBottom:10}} onKeyDown={e=>e.key==="Enter"&&addWsNew()}/>
         {addWsErr&&<p style={{margin:"0 0 8px",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{addWsErr}</p>}
-        <button onClick={addWsNew} disabled={!addWsName.trim()||addWsLoad} className="bf-btn">{addWsLoad?"Vytvářím…":"Vytvořit skupinu →"}</button>
+        <button onClick={addWsNew} disabled={!addWsName.trim()||addWsLoad} className="bf-btn">
+          {addWsLoad?"Vytvářím…":"Vytvořit skupinu →"}
+        </button>
       </div>}
-      <button onClick={logout} className="bf-btn-out" style={{width:"100%",justifyContent:"center",marginTop:"1rem"}}>Odhlásit se</button>
+
+      <button onClick={logout} className="bf-btn-out"
+        style={{width:"100%",justifyContent:"center",marginTop:"0.5rem"}}>
+        Odhlásit se
+      </button>
     </div>
   );
 
