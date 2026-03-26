@@ -205,11 +205,18 @@ export default function App(){
     setAddWsLoad(true);setAddWsErr("");
     const{data,error}=await supabase.from("workspaces").select("*").eq("code",addWsCode.trim().toUpperCase()).single();
     if(error||!data){setAddWsErr("Kód skupiny nebyl nalezen.");setAddWsLoad(false);return;}
-    // check if already member
-    if(knownWs.find(w=>w.id===data.id)){setAddWsErr("V této skupině již jsi.");setAddWsLoad(false);return;}
+    // check if already member (in state)
+    if(knownWs.find(w=>w.id===data.id)){
+      setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
+      await switchWs(data.id);return;
+    }
+    // try insert — if duplicate, user is already member, just switch
     const{error:me}=await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
-    if(me){setAddWsErr("Přidání do skupiny selhalo.");setAddWsLoad(false);return;}
-    const newList=[...knownWs,data];setKnownWs(newList);
+    if(me&&!me.message?.includes("duplicate")&&me.code!=="23505"){
+      setAddWsErr("Přidání do skupiny selhalo: "+me.message);setAddWsLoad(false);return;
+    }
+    const newList=[...knownWs.filter(w=>w.id!==data.id),data];
+    setKnownWs(newList);
     setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
     await switchWs(data.id);
   }
