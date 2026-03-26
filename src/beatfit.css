@@ -291,6 +291,20 @@ body {
 .bf-act-num:focus { border-color: var(--bf-accent); }
 .bf-act-num::placeholder { color: var(--bf-text3); }
 
+/* activity chip buttons used in Prefs */
+.act-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px; background: transparent;
+  border: 1.5px solid var(--bf-border); color: var(--bf-text);
+  cursor: pointer; font-weight: 600; text-align: left;
+}
+.act-chip:hover { border-color: var(--bf-border-md); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+.act-chip.active { background: var(--bf-success); color: var(--bf-accent-btn); border-color: var(--bf-success); }
+.act-chip.active span { color: inherit; }
+
+/* focus styles for accessibility */
+.act-chip:focus { outline: none; box-shadow: 0 0 0 4px rgba(56,189,248,0.12); }
+
 /* ── leaderboard row ───────────────────────────────────────────── */
 .bf-lb-row {
   display: flex; align-items: center; gap: 10px;

@@ -34,19 +34,22 @@ export default function Header(props){
   return (
     <div>
       <div className="bf-topbar" onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <div>
-          <div className="bf-label" style={{marginBottom:1}}>{userMeta?.name}</div>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div className="bf-label" style={{marginBottom:0}}>{userMeta?.name}</div>
           <WsDropdown/>
+          <button onClick={()=>openPrefs&&openPrefs()} aria-label="Nastavení" title="Nastavení" className="bf-btn-out" style={{padding:'6px 12px',fontSize:13,gap:6,borderRadius:'var(--bf-r-md)'}}>
+            <span style={{fontSize:13,lineHeight:1}}>⚙</span>
+            <span style={{fontSize:13,fontWeight:700}}>Nastavení</span>
+          </button>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <button onClick={()=>openPrefs&&openPrefs()} className="bf-btn-sm">⚙</button>
           {loading&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Načítám…</span>}
         </div>
       </div>
       <div className="bf-nav">
         {[["log","Záznam"],["leaderboard","Žebříček"],["teams","Týmy"],["stats","Moje"]].map(([v,l])=> (
-          <button key={v} onClick={()=>{setView(v);if(v==="teams")setTeamView("list");setWsDropOpen(false);}} className={`bf-nav-btn${props.view===v?" active":""}`}>{l}</button>
-        ))}
+            <button key={v} onClick={()=>{setView(v);if(v==="teams")setTeamView("list");setWsDropOpen(false);}} className={`bf-nav-btn${props.view===v?" active":""}`}>{l}</button>
+          ))}
       </div>
     </div>
   );
