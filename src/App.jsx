@@ -26,6 +26,7 @@ function weekAgoStr(){const d=new Date();d.setDate(d.getDate()-7);return d.toISO
 function dMinus(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];}
 function calcStreak(days){if(!days||!Object.keys(days).length)return 0;let s=0,c=new Date();if(!days[todayStr()])c.setDate(c.getDate()-1);while(true){const d=c.toISOString().split("T")[0];if(!days[d])break;s++;c.setDate(c.getDate()-1);}return s;}
 function randCode(){return Math.random().toString(36).slice(2,8).toUpperCase();}
+function fmtVal(a,v){if(a.unit==="km")return parseFloat(v).toFixed(1);if(a.unit==="kr")return Math.round(v).toLocaleString();return Math.round(v);}
 function exportCSV(name,days,pts,age){
   const h=["Datum","Skóre",...AM.map(a=>`${a.label} (${a.unit})`)];
   const r=Object.entries(days).sort(([a],[b])=>a.localeCompare(b)).map(([d,e])=>[d,calcScore(e,age,pts).toFixed(2),...AM.map(a=>parseFloat(e[a.key])||0)]);
@@ -38,40 +39,42 @@ function seasonLabel(s){const st=seasonStatus(s);if(st==="upcoming")return{text:
 function daysLeft(s){return Math.ceil((new Date(s.end_date)-new Date(todayStr()))/(1000*60*60*24));}
 
 const MEDALS=["🥇","🥈","🥉"],RANK_CLR=["#f59e0b","#94a3b8","#b87333"];
-const SK="bf_session";
+const SK="bf_session"; // { userId, activeWsId, knownWsIds:[] }
 
 export default function App(){
-  // ── auth / workspace ──────────────────────────────────────────────────────
-  const[ws,setWs]               = useState(null);
-  const[loginPath,setLoginPath] = useState(null); // null | "code" | "new"
-  const[wsIn,setWsIn]           = useState("");
-  const[wsErr,setWsErr]         = useState("");
-  const[wsLoad,setWsLoad]       = useState(false);
-  const[pendU,setPendU]         = useState(null);
-  const[pinIn,setPinIn]         = useState("");
-  const[pinErr,setPinErr]       = useState(false);
-  const[setPinMode,setSetPinMode] = useState(false);
-  const[newPin,setNewPin]       = useState("");
-  const[newPinC,setNewPinC]     = useState("");
-  // new user + new workspace form
-  const[regName,setRegName]     = useState("");
-  const[regDob,setRegDob]       = useState("");
-  const[regPin,setRegPin]       = useState("");
-  const[regWsName,setRegWsName] = useState("");
-  // existing user in known workspace (code path)
-  const[newName,setNewName]     = useState("");
-  const[newDob,setNewDob]       = useState("");
-  const[newRegPin,setNewRegPin] = useState("");
-  // ── data ──────────────────────────────────────────────────────────────────
-  const[view,setView]           = useState("login");
+  // ── auth ──────────────────────────────────────────────────────────────────
+  const[step,setStep]           = useState("start"); // start | login | register | ws-select | app
   const[uid,setUid]             = useState(null);
-  const[users,setUsers]         = useState({});
-  const[entries,setEntries]     = useState({});
+  const[userMeta,setUserMeta]   = useState(null); // { name, dob, pin }
+  // login/register form
+  const[authName,setAuthName]   = useState("");
+  const[authDob,setAuthDob]     = useState("");
+  const[authPin,setAuthPin]     = useState("");
+  const[authPin2,setAuthPin2]   = useState("");
+  const[authErr,setAuthErr]     = useState("");
+  const[authLoad,setAuthLoad]   = useState(false);
+  // workspace selection
+  const[knownWs,setKnownWs]     = useState([]); // [{id,name,code,created_by}]
+  const[activeWsId,setActiveWsId] = useState(null);
+  const[wsDropOpen,setWsDropOpen] = useState(false);
+  const[addWsMode,setAddWsMode] = useState(null); // null | "code" | "new"
+  const[addWsCode,setAddWsCode] = useState("");
+  const[addWsErr,setAddWsErr]   = useState("");
+  const[addWsName,setAddWsName] = useState("");
+  const[addWsLoad,setAddWsLoad] = useState(false);
+  // invite from URL
+  const[pendInv,setPendInv]     = useState(null);
+  const[invInfo,setInvInfo]     = useState(null);
+  // ── workspace data ────────────────────────────────────────────────────────
+  const[view,setView]           = useState("log");
+  const[wsUsers,setWsUsers]     = useState({});  // userId -> {name,dob}
+  const[entries,setEntries]     = useState({});  // userId -> {date -> data}
   const[pts,setPts]             = useState(DEFAULT_PTS);
   const[goals,setGoals]         = useState({});
   const[teams,setTeams]         = useState({});
   const[members,setMembers]     = useState({});
   const[seasons,setSeasons]     = useState({});
+  // ── ui state ──────────────────────────────────────────────────────────────
   const[loading,setLoading]     = useState(true);
   const[saving,setSaving]       = useState(false);
   const[flash,setFlash]         = useState(false);
@@ -81,21 +84,14 @@ export default function App(){
   const[form,setForm]           = useState({});
   const[goalIn,setGoalIn]       = useState("");
   const[goalFlash,setGoalFlash] = useState(false);
-  // ── group rename ──────────────────────────────────────────────────────────
   const[renameWs,setRenameWs]   = useState(false);
   const[renameVal,setRenameVal] = useState("");
-  // ── join another group ────────────────────────────────────────────────────
-  const[joinMode,setJoinMode]   = useState(false);
-  const[joinCode,setJoinCode]   = useState("");
-  const[joinErr,setJoinErr]     = useState("");
   // ── teams / seasons ───────────────────────────────────────────────────────
   const[teamView,setTeamView]   = useState("list");
   const[activeTeam,setActiveTeam] = useState(null);
   const[newTName,setNewTName]   = useState("");
   const[tPeriod,setTPeriod]     = useState("week");
   const[tTab,setTTab]           = useState("score");
-  const[pendInv,setPendInv]     = useState(null);
-  const[invInfo,setInvInfo]     = useState(null);
   const[lbMode,setLbMode]       = useState("global");
   const[tSeason,setTSeason]     = useState("all");
   const[sForm,setSForm]         = useState({name:"",start_date:"",end_date:""});
@@ -126,144 +122,171 @@ export default function App(){
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
     const inv=params.get("invite"),wsCode=params.get("ws");
-    if(inv)setPendInv(inv);
-    if(wsCode)setWsIn(wsCode);
+    if(inv){setPendInv(inv);}
+    if(wsCode){setAddWsCode(wsCode);}
     window.history.replaceState({},"",window.location.pathname);
+
     const sess=JSON.parse(localStorage.getItem(SK)||"null");
-    if(sess?.userId&&sess?.wsId){loadWs(sess.wsId).then(ok=>{if(ok){setUid(sess.userId);setView("log");}else{localStorage.removeItem(SK);setLoading(false);}});}
-    else setLoading(false);
+    if(sess?.userId&&sess?.activeWsId){
+      restoreSession(sess).then(ok=>{
+        if(!ok){localStorage.removeItem(SK);setLoading(false);}
+      });
+    } else setLoading(false);
   },[]);
 
-  // ── load workspace ────────────────────────────────────────────────────────
-  async function loadWs(wsId){
+  async function restoreSession(sess){
     try{
-      const[wR,uR,tR,sR,stR,tmR]=await Promise.all([
-        supabase.from("workspaces").select("*").eq("id",wsId).single(),
-        supabase.from("users").select("*").eq("workspace_id",wsId),
+      const{data:u,error:ue}=await supabase.from("users").select("*").eq("id",sess.userId).single();
+      if(ue||!u)return false;
+      setUid(sess.userId);setUserMeta({name:u.name,dob:u.dob,pin:u.pin});
+      // load workspaces user belongs to
+      const wsList=await loadUserWorkspaces(sess.userId);
+      setKnownWs(wsList);
+      const activeWs=wsList.find(w=>w.id===sess.activeWsId)||wsList[0];
+      if(!activeWs)return false;
+      setActiveWsId(activeWs.id);
+      await loadWsData(activeWs.id,sess.userId);
+      // handle pending invite
+      if(pendInv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",activeWs.id);const tf=td?.find(t=>t.invite_code===pendInv);if(tf)setInvInfo({teamId:tf.id,teamName:tf.name});}
+      setStep("app");return true;
+    }catch{return false;}
+  }
+
+  async function loadUserWorkspaces(userId){
+    const{data}=await supabase.from("workspace_members").select("workspace_id").eq("user_id",userId);
+    if(!data?.length)return[];
+    const ids=data.map(r=>r.workspace_id);
+    const{data:ws}=await supabase.from("workspaces").select("*").in("id",ids);
+    return ws||[];
+  }
+
+  async function loadWsData(wsId,userId){
+    setLoading(true);
+    try{
+      // members of this workspace
+      const{data:mData}=await supabase.from("workspace_members").select("user_id").eq("workspace_id",wsId);
+      const memberIds=(mData||[]).map(r=>r.user_id);
+      if(!memberIds.length){setWsUsers({});setEntries({});setLoading(false);return;}
+      const[uR,eR,gR,tR,sR,stR,tmR]=await Promise.all([
+        supabase.from("users").select("*").in("id",memberIds),
+        supabase.from("entries").select("*").in("user_id",memberIds),
+        supabase.from("goals").select("*").in("user_id",memberIds),
         supabase.from("teams").select("*").eq("workspace_id",wsId),
         supabase.from("seasons").select("*").eq("workspace_id",wsId),
         supabase.from("settings").select("*").eq("key","pts"),
         supabase.from("team_members").select("*"),
       ]);
-      if(wR.error)return false;
-      setWs({id:wR.data.id,name:wR.data.name,code:wR.data.code,created_by:wR.data.created_by});
-      const uMap={},uIds=[];
-      for(const u of uR.data||[]){uMap[u.id]={name:u.name,dob:u.dob,since:u.since,pin:u.pin||""};uIds.push(u.id);}
-      setUsers(uMap);
-      if(uIds.length>0){
-        const[eR,gR]=await Promise.all([supabase.from("entries").select("*").in("user_id",uIds),supabase.from("goals").select("*").in("user_id",uIds)]);
-        const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
-        const gMap={};for(const g of gR.data||[])gMap[g.user_id]=g.weekly_goal;setGoals(gMap);
-      }
+      const uMap={};for(const u of uR.data||[])uMap[u.id]={name:u.name,dob:u.dob};setWsUsers(uMap);
+      const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
+      const gMap={};for(const g of gR.data||[])gMap[g.user_id]=g.weekly_goal;setGoals(gMap);
       const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code};setTeams(tMap);
-      const tIds=Object.keys(tMap),mMap={};
-      for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
+      const tIds=Object.keys(tMap),mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
       if(stR.data?.length>0)setPts({...DEFAULT_PTS,...stR.data[0].value});
-      setLoading(false);return true;
-    }catch{return false;}
+      setForm(eMap[userId]?.[logDate]||{});
+      setGoalIn(gMap[userId]||"");
+    }catch(e){setErr("Nepodařilo se načíst data skupiny.");}
+    setLoading(false);
   }
 
-  // ── enter workspace by code ───────────────────────────────────────────────
-  async function enterWs(){
-    if(!wsIn.trim())return;
-    setWsLoad(true);setWsErr("");
-    const{data,error}=await supabase.from("workspaces").select("*").eq("code",wsIn.trim().toUpperCase()).single();
-    if(error||!data){setWsErr("Kód skupiny nebyl nalezen.");setWsLoad(false);return;}
-    if(pendInv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",data.id);const tf=td?.find(t=>t.invite_code===pendInv);if(tf)setInvInfo({teamId:tf.id,teamName:tf.name});}
-    await loadWs(data.id);setWsLoad(false);
+  // ── switch workspace ──────────────────────────────────────────────────────
+  async function switchWs(wsId){
+    setWsDropOpen(false);setLoading(true);
+    setActiveWsId(wsId);
+    setView("log");setLbMode("global");setTeamView("list");
+    await loadWsData(wsId,uid);
+    const sess=JSON.parse(localStorage.getItem(SK)||"{}");
+    localStorage.setItem(SK,JSON.stringify({...sess,activeWsId:wsId}));
   }
 
-  // ── create workspace + user (solo start) ──────────────────────────────────
-  async function createWsAndRegister(){
-    if(!regName.trim()||!regDob||regPin.length<4||!regWsName.trim())return;
-    setSaving(true);setErr(null);
-    const wsId="ws"+Date.now();
-    const userId="u"+(Date.now()+1);
-    const code=randCode();
-    const{error:we}=await supabase.from("workspaces").insert({id:wsId,name:regWsName.trim(),code,created_by:userId});
-    if(we){setErr("Vytvoření skupiny selhalo.");setSaving(false);return;}
-    const{error:ue}=await supabase.from("users").insert({id:userId,name:regName.trim(),dob:regDob,since:todayStr(),pin:regPin,workspace_id:wsId});
-    if(ue){setErr("Registrace selhala.");setSaving(false);return;}
-    await loadWs(wsId);
-    setUid(userId);
-    localStorage.setItem(SK,JSON.stringify({userId,wsId}));
-    setRegName("");setRegDob("");setRegPin("");setRegWsName("");
-    setSaving(false);setView("log");
+  // ── add workspace ─────────────────────────────────────────────────────────
+  async function addWsByCode(){
+    if(!addWsCode.trim())return;
+    setAddWsLoad(true);setAddWsErr("");
+    const{data,error}=await supabase.from("workspaces").select("*").eq("code",addWsCode.trim().toUpperCase()).single();
+    if(error||!data){setAddWsErr("Kód skupiny nebyl nalezen.");setAddWsLoad(false);return;}
+    // check if already member
+    if(knownWs.find(w=>w.id===data.id)){setAddWsErr("V této skupině již jsi.");setAddWsLoad(false);return;}
+    const{error:me}=await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
+    if(me){setAddWsErr("Přidání do skupiny selhalo.");setAddWsLoad(false);return;}
+    const newList=[...knownWs,data];setKnownWs(newList);
+    setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
+    await switchWs(data.id);
   }
 
-  // ── register into existing workspace ─────────────────────────────────────
-  async function register(){
-    if(!newName.trim()||!newDob||newRegPin.length<4)return;
-    const dup=Object.values(users).some(u=>u.name.toLowerCase()===newName.trim().toLowerCase());
-    if(dup){setErr(`Hráč se jménem "${newName.trim()}" již existuje.`);return;}
-    setSaving(true);setErr(null);
+  async function addWsNew(){
+    if(!addWsName.trim())return;
+    setAddWsLoad(true);setAddWsErr("");
+    const wsId="ws"+Date.now(),code=randCode();
+    const{error:we}=await supabase.from("workspaces").insert({id:wsId,name:addWsName.trim(),code,created_by:uid});
+    if(we){setAddWsErr("Vytvoření skupiny selhalo.");setAddWsLoad(false);return;}
+    const{error:me}=await supabase.from("workspace_members").insert({workspace_id:wsId,user_id:uid});
+    if(me){setAddWsErr("Přidání do skupiny selhalo.");setAddWsLoad(false);return;}
+    const newWs={id:wsId,name:addWsName.trim(),code,created_by:uid};
+    setKnownWs(w=>[...w,newWs]);setAddWsName("");setAddWsMode(null);setAddWsLoad(false);
+    await switchWs(wsId);
+  }
+
+  // ── login / register ──────────────────────────────────────────────────────
+  async function doLogin(){
+    if(!authName.trim()||!authPin){setAuthErr("Vyplň jméno a PIN.");return;}
+    setAuthLoad(true);setAuthErr("");
+    const{data,error}=await supabase.from("users").select("*").ilike("name",authName.trim()).single();
+    if(error||!data){setAuthErr("Hráč s tímto jménem nebyl nalezen.");setAuthLoad(false);return;}
+    if(data.pin!==authPin){setAuthErr("Nesprávný PIN.");setAuthLoad(false);return;}
+    setUid(data.id);setUserMeta({name:data.name,dob:data.dob,pin:data.pin});
+    const wsList=await loadUserWorkspaces(data.id);
+    setKnownWs(wsList);
+    if(wsList.length===0){
+      // no workspaces yet — go to ws selection
+      const sess={userId:data.id,activeWsId:null,knownWsIds:[]};
+      localStorage.setItem(SK,JSON.stringify(sess));
+      setAuthLoad(false);setStep("ws-select");
+    } else {
+      const activeWs=wsList[0];
+      setActiveWsId(activeWs.id);
+      await loadWsData(activeWs.id,data.id);
+      localStorage.setItem(SK,JSON.stringify({userId:data.id,activeWsId:activeWs.id}));
+      setAuthLoad(false);setStep("app");
+    }
+  }
+
+  async function doRegister(){
+    if(!authName.trim()||!authDob||authPin.length<4||authPin!==authPin2){
+      setAuthErr("Zkontroluj vyplněné údaje — PINy se musí shodovat (min. 4 číslice).");return;
+    }
+    setAuthLoad(true);setAuthErr("");
+    // check name uniqueness globally
+    const{data:existing}=await supabase.from("users").select("id").ilike("name",authName.trim());
+    if(existing?.length){setAuthErr("Hráč s tímto jménem již existuje.");setAuthLoad(false);return;}
     const id="u"+Date.now();
-    const{error:e}=await supabase.from("users").insert({id,name:newName.trim(),dob:newDob,since:todayStr(),pin:newRegPin,workspace_id:ws.id});
-    if(e){setErr("Registrace se nezdařila.");setSaving(false);return;}
-    setUsers(u=>({...u,[id]:{name:newName.trim(),dob:newDob,since:todayStr(),pin:newRegPin}}));
-    setNewName("");setNewDob("");setNewRegPin("");loginAs(id);setSaving(false);
-  }
-
-  // ── PIN handling ──────────────────────────────────────────────────────────
-  function selectU(id){
-    if(pendU===id){setPendU(null);setPinIn("");setPinErr(false);setSetPinMode(false);return;}
-    setPendU(id);setPinIn("");setPinErr(false);
-    const u=users[id];setSetPinMode(!u?.pin);setNewPin("");setNewPinC("");
-  }
-
-  function verifyPin(){if(pinIn===users[pendU].pin)loginAs(pendU);else{setPinErr(true);setPinIn("");}}
-
-  async function saveNewPin(){
-    if(newPin.length<4||newPin!==newPinC){setErr("PINy se neshodují nebo jsou kratší než 4 číslice.");return;}
-    const targetId=pendU||uid;if(!targetId){setErr("Chyba: neznámý uživatel.");return;}
-    const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",targetId);
-    if(e){setErr(`PIN error: ${e.message}`);return;}
-    setUsers(u=>({...u,[targetId]:{...u[targetId],pin:newPin}}));
-    if(pendU)loginAs(pendU);
-  }
-
-  function loginAs(id){
-    setUid(id);setForm(entries[id]?.[logDate]||{});setGoalIn(goals[id]||"");
-    localStorage.setItem(SK,JSON.stringify({userId:id,wsId:ws.id}));
-    setPendU(null);setPinIn("");setSetPinMode(false);
-    if(pendInv)joinByCode(pendInv);
-    setView("log");
+    const{error:ue}=await supabase.from("users").insert({id,name:authName.trim(),dob:authDob,since:todayStr(),pin:authPin});
+    if(ue){setAuthErr("Registrace selhala.");setAuthLoad(false);return;}
+    setUid(id);setUserMeta({name:authName.trim(),dob:authDob,pin:authPin});
+    setKnownWs([]);
+    localStorage.setItem(SK,JSON.stringify({userId:id,activeWsId:null}));
+    setAuthLoad(false);setStep("ws-select");
   }
 
   function logout(){
-    setUid(null);setWs(null);setUsers({});setEntries({});setTeams({});setMembers({});setSeasons({});setGoals({});
-    setPendU(null);setWsIn("");setPinIn("");setSetPinMode(false);setInvInfo(null);setLoginPath(null);
-    setRenameWs(false);setJoinMode(false);setJoinCode("");setJoinErr("");
-    localStorage.removeItem(SK);setView("login");
+    setUid(null);setUserMeta(null);setKnownWs([]);setActiveWsId(null);
+    setWsUsers({});setEntries({});setTeams({});setMembers({});setSeasons({});setGoals({});
+    setStep("start");setView("log");setAuthName("");setAuthDob("");setAuthPin("");setAuthPin2("");
+    setAuthErr("");setAddWsMode(null);setAddWsCode("");setAddWsErr("");setAddWsName("");
+    setWsDropOpen(false);setRenameWs(false);
+    localStorage.removeItem(SK);
   }
 
   // ── rename workspace ──────────────────────────────────────────────────────
   async function doRenameWs(){
     if(!renameVal.trim())return;
-    const{error:e}=await supabase.from("workspaces").update({name:renameVal.trim()}).eq("id",ws.id);
-    if(e){setErr("Přejmenování selhalo.");return;}
-    setWs(w=>({...w,name:renameVal.trim()}));setRenameWs(false);
+    const{error}=await supabase.from("workspaces").update({name:renameVal.trim()}).eq("id",activeWsId);
+    if(error){setErr("Přejmenování selhalo.");return;}
+    setKnownWs(w=>w.map(x=>x.id===activeWsId?{...x,name:renameVal.trim()}:x));
+    setRenameWs(false);
   }
 
-  // ── join another group ────────────────────────────────────────────────────
-  async function joinAnotherGroup(){
-    if(!joinCode.trim())return;
-    setJoinErr("");
-    const{data,error}=await supabase.from("workspaces").select("*").eq("code",joinCode.trim().toUpperCase()).single();
-    if(error||!data){setJoinErr("Kód skupiny nebyl nalezen.");return;}
-    if(data.id===ws.id){setJoinErr("Tato skupina je již aktivní.");return;}
-    // switch to new workspace — keep same user id won't exist there, so just switch context
-    // User needs to register in new workspace — log them out and pre-fill code
-    localStorage.removeItem(SK);
-    setWsIn(joinCode.trim().toUpperCase());
-    setJoinMode(false);setJoinCode("");setJoinErr("");
-    logout();
-    // re-set wsIn after logout clears it
-    setTimeout(()=>{setWsIn(joinCode.trim().toUpperCase());setLoginPath("code");},50);
-  }
-
-  // ── entry operations ──────────────────────────────────────────────────────
+  // ── entry ops ─────────────────────────────────────────────────────────────
   async function saveEntry(){
     setSaving(true);setErr(null);
     const t=logDate||todayStr();
@@ -293,11 +316,29 @@ export default function App(){
   async function loginAdmin(){
     if(adminPwd!==import.meta.env.VITE_ADMIN_PASSWORD){setAdminErr(true);return;}
     setAdminErr(false);setPtsEdit({...pts});
-    const[wR,uR,eR]=await Promise.all([supabase.from("workspaces").select("*"),supabase.from("users").select("*"),supabase.from("entries").select("user_id")]);
+    const[wR,uR,eR,mR]=await Promise.all([
+      supabase.from("workspaces").select("*"),
+      supabase.from("users").select("*"),
+      supabase.from("entries").select("user_id"),
+      supabase.from("workspace_members").select("*"),
+    ]);
     const ec={};for(const e of eR.data||[])ec[e.user_id]=(ec[e.user_id]||0)+1;
     const wMap={};for(const w of wR.data||[])wMap[w.id]={name:w.name,code:w.code};setAllWs(wMap);
-    const wuMap={};for(const u of uR.data||[]){if(!wuMap[u.workspace_id])wuMap[u.workspace_id]=[];wuMap[u.workspace_id].push({id:u.id,name:u.name,dob:u.dob,pin:u.pin,entryCount:ec[u.id]||0});}setAllWsU(wuMap);
-    setView("admin");
+    // group users by workspace via workspace_members
+    const wuMap={};
+    for(const m of mR.data||[]){
+      const u=(uR.data||[]).find(x=>x.id===m.user_id);if(!u)continue;
+      if(!wuMap[m.workspace_id])wuMap[m.workspace_id]=[];
+      wuMap[m.workspace_id].push({id:u.id,name:u.name,dob:u.dob,pin:u.pin,entryCount:ec[u.id]||0});
+    }
+    setAllWsU(wuMap);setStep("admin");
+  }
+
+  async function savePts(){
+    setPtsSv(true);const merged={...pts,...ptsEdit};
+    const{error:e}=await supabase.from("settings").upsert({key:"pts",value:merged},{onConflict:"key"});
+    if(e){setErr("Uložení koeficientů selhalo.");setPtsSv(false);return;}
+    setPts(merged);setPtsFlash(true);setTimeout(()=>setPtsFlash(false),2000);setPtsSv(false);
   }
 
   async function createAdminWs(){
@@ -318,26 +359,17 @@ export default function App(){
   async function deleteAdminWs(wsId){
     if(!window.confirm(`Opravdu smazat skupinu "${allWs[wsId]?.name}" včetně VŠECH dat?`))return;
     const uIds=(allWsU[wsId]||[]).map(u=>u.id);
-    if(uIds.length>0){await Promise.all([supabase.from("entries").delete().in("user_id",uIds),supabase.from("goals").delete().in("user_id",uIds),supabase.from("team_members").delete().in("user_id",uIds)]);await supabase.from("users").delete().eq("workspace_id",wsId);}
-    await Promise.all([supabase.from("seasons").delete().eq("workspace_id",wsId),supabase.from("teams").delete().eq("workspace_id",wsId)]);
+    if(uIds.length>0){await Promise.all([supabase.from("entries").delete().in("user_id",uIds),supabase.from("goals").delete().in("user_id",uIds),supabase.from("team_members").delete().in("user_id",uIds)]);}
+    await Promise.all([supabase.from("workspace_members").delete().eq("workspace_id",wsId),supabase.from("seasons").delete().eq("workspace_id",wsId),supabase.from("teams").delete().eq("workspace_id",wsId)]);
     await supabase.from("workspaces").delete().eq("id",wsId);
     setAllWs(w=>{const n={...w};delete n[wsId];return n;});setAllWsU(w=>{const n={...w};delete n[wsId];return n;});if(aSelWs===wsId)setASelWs(null);
   }
 
-  async function savePts(){
-    setPtsSv(true);const merged={...pts,...ptsEdit};
-    const{error:e}=await supabase.from("settings").upsert({key:"pts",value:merged},{onConflict:"key"});
-    if(e){setErr("Uložení koeficientů selhalo.");setPtsSv(false);return;}
-    setPts(merged);setPtsFlash(true);setTimeout(()=>setPtsFlash(false),2000);setPtsSv(false);
-  }
-
-  async function saveAdminEditUser(){
+  async function saveAdminUser(){
     if(!editName.trim()||!editDob)return;
-    const wsId=Object.keys(allWsU).find(w=>(allWsU[w]||[]).some(u=>u.id===editUser));
-    const dup=(allWsU[wsId]||[]).some(u=>u.id!==editUser&&u.name.toLowerCase()===editName.trim().toLowerCase());
-    if(dup){setErr(`Jméno "${editName.trim()}" již existuje.`);return;}
     const{error:e}=await supabase.from("users").update({name:editName.trim(),dob:editDob}).eq("id",editUser);
     if(e){setErr("Uložení selhalo.");return;}
+    const wsId=Object.keys(allWsU).find(w=>(allWsU[w]||[]).some(u=>u.id===editUser));
     setAllWsU(w=>({...w,[wsId]:(w[wsId]||[]).map(u=>u.id===editUser?{...u,name:editName.trim(),dob:editDob}:u)}));setEditUser(null);
   }
 
@@ -350,9 +382,8 @@ export default function App(){
 
   async function deleteAdminUser(userId,wsId){
     const u=(allWsU[wsId]||[]).find(u=>u.id===userId);
-    if(!window.confirm(`Opravdu smazat hráče "${u?.name}"?`))return;
-    await Promise.all([supabase.from("entries").delete().eq("user_id",userId),supabase.from("goals").delete().eq("user_id",userId),supabase.from("team_members").delete().eq("user_id",userId)]);
-    await supabase.from("users").delete().eq("id",userId);
+    if(!window.confirm(`Opravdu smazat hráče "${u?.name}" ze skupiny?`))return;
+    await supabase.from("workspace_members").delete().eq("workspace_id",wsId).eq("user_id",userId);
     setAllWsU(w=>({...w,[wsId]:(w[wsId]||[]).filter(u=>u.id!==userId)}));setEditUser(null);
   }
 
@@ -360,7 +391,7 @@ export default function App(){
   async function createTeam(){
     if(!newTName.trim())return;setSaving(true);setErr(null);
     const id="t"+Date.now(),ic=randCode();
-    const{error:e}=await supabase.from("teams").insert({id,name:newTName.trim(),created_by:uid,invite_code:ic,workspace_id:ws.id});
+    const{error:e}=await supabase.from("teams").insert({id,name:newTName.trim(),created_by:uid,invite_code:ic,workspace_id:activeWsId});
     if(e){setErr("Vytvoření týmu selhalo.");setSaving(false);return;}
     await supabase.from("team_members").insert({team_id:id,user_id:uid});
     setTeams(t=>({...t,[id]:{name:newTName.trim(),created_by:uid,invite_code:ic}}));setMembers(m=>({...m,[id]:[uid]}));
@@ -389,7 +420,7 @@ export default function App(){
     if(sForm.end_date<=sForm.start_date){setErr("Datum konce musí být po datu začátku.");return;}
     setSSaving(true);setErr(null);
     const id="s"+Date.now();
-    const ns={id,name:sForm.name.trim(),start_date:sForm.start_date,end_date:sForm.end_date,created_by:uid,team_id:teamId||null,scope:teamId?"team":"global",workspace_id:ws.id};
+    const ns={id,name:sForm.name.trim(),start_date:sForm.start_date,end_date:sForm.end_date,created_by:uid,team_id:teamId||null,scope:teamId?"team":"global",workspace_id:activeWsId};
     const{error:e}=await supabase.from("seasons").insert(ns);
     if(e){setErr("Vytvoření sezóny selhalo.");setSSaving(false);return;}
     setSeasons(s=>({...s,[id]:{name:ns.name,start_date:ns.start_date,end_date:ns.end_date,created_by:uid,team_id:teamId||null,scope:ns.scope}}));
@@ -407,21 +438,21 @@ export default function App(){
     const t=todayStr(),w=weekAgoStr(),res={};
     for(const[id,days] of Object.entries(entries)){
       if(filterIds&&!filterIds.includes(id))continue;
-      const u=users[id];if(!u)continue;
+      const u=wsUsers[id];if(!u)continue;
       let sc=0;const acts={};for(const a of AM)acts[a.key]=0;
       for(const[date,e] of Object.entries(days)){
         if(fromDate&&toDate){if(date<fromDate||date>toDate)continue;}
         else{if(period==="today"&&date!==t)continue;if(period==="week"&&date<w)continue;}
         sc+=calcScore(e,calcAge(u.dob),pts);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;
       }
-      res[id]={sc,name:u.name,age:calcAge(u.dob),acts};
+      res[id]={sc,name:u.name,dob:u.dob,acts};
     }
     return res;
   }
 
-  // ── styles ────────────────────────────────────────────────────────────────
+  // ── styles helpers ────────────────────────────────────────────────────────
   const P={padding:"1rem",maxWidth:480,margin:"0 auto"};
-  const ErrBanner=()=>err?(<div className="bf-err-banner"><span>{err}</span><button onClick={()=>setErr(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--bf-danger)",fontSize:18,lineHeight:1,padding:"0 0 0 8px"}}>×</button></div>):null;
+  const Err=()=>err?(<div className="bf-err-banner"><span>{err}</span><button onClick={()=>setErr(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--bf-danger)",fontSize:18,lineHeight:1,padding:"0 0 0 8px"}}>×</button></div>):null;
 
   const SFormCard=({onSubmit,onCancel})=>(
     <div className="bf-card" style={{marginBottom:"1rem"}}>
@@ -433,176 +464,136 @@ export default function App(){
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={onSubmit} disabled={!sForm.name.trim()||!sForm.start_date||!sForm.end_date||sSaving} className="bf-btn" style={{flex:1}}>{sSaving?"Vytvářím…":sFlash?"✓ Vytvořeno!":"Vytvořit výzvu →"}</button>
-        <button onClick={onCancel} className="bf-btn-ghost" style={{flexShrink:0}}>Zrušit</button>
+        <button onClick={onCancel} className="bf-btn-ghost">Zrušit</button>
       </div>
     </div>
   );
 
-  if(loading)return<div style={{...P,textAlign:"center",paddingTop:"3rem",color:"var(--bf-text3)",fontSize:14,fontFamily:"var(--bf-font)"}}>Načítám data…</div>;
+  if(loading&&step!=="app")return<div style={{...P,textAlign:"center",paddingTop:"3rem",color:"var(--bf-text3)",fontSize:14,fontFamily:"var(--bf-font)"}}>Načítám…</div>;
 
-  const user=users[uid];
+  const activeWs=knownWs.find(w=>w.id===activeWsId);
+  const isWsCreator=activeWs?.created_by===uid;
   const ACTS=getActs(pts);
   const myTeamIds=Object.keys(members).filter(tid=>(members[tid]||[]).includes(uid));
   const globalSeasons=Object.entries(seasons).filter(([,s])=>s.scope==="global");
-  const isWsCreator=ws&&uid&&ws.created_by===uid;
 
-  // ══ LOGIN ════════════════════════════════════════════════════════════════
-  if(view==="login")return(
+  // ══ START ════════════════════════════════════════════════════════════════
+  if(step==="start")return(
     <div style={P}>
-      <div style={{textAlign:"center",padding:"2rem 0 1.75rem"}}>
+      <div style={{textAlign:"center",padding:"2.5rem 0 2rem"}}>
         <div className="bf-ws-badge">Fitness soutěž</div>
-        <h1 style={{fontSize:40,fontWeight:800,letterSpacing:"-0.04em",fontFamily:"var(--bf-font)",color:"var(--bf-text)",marginBottom:6}}>Beatfit</h1>
+        <h1 style={{fontSize:42,fontWeight:800,letterSpacing:"-0.04em",fontFamily:"var(--bf-font)",color:"var(--bf-text)",marginBottom:6}}>Beatfit</h1>
         <p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zaznamenávej sporty, porovnávej výsledky</p>
       </div>
-      <ErrBanner/>
-
-      {/* ── path selection ── */}
-      {!loginPath&&(
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <button onClick={()=>setLoginPath("code")} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-lg)",cursor:"pointer",textAlign:"left",transition:"border-color 0.15s"}}>
-            <div style={{width:44,height:44,borderRadius:"var(--bf-r-md)",background:"var(--bf-accent-dim)",color:"var(--bf-accent-text)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>⌨</div>
-            <div>
-              <p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Mám kód skupiny</p>
-              <p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Připojit se ke skupině kolegy nebo přítele</p>
-            </div>
-          </button>
-          <button onClick={()=>setLoginPath("new")} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-lg)",cursor:"pointer",textAlign:"left",transition:"border-color 0.15s"}}>
-            <div style={{width:44,height:44,borderRadius:"var(--bf-r-md)",background:"var(--bf-success-dim)",color:"var(--bf-success)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>+</div>
-            <div>
-              <p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Začít bez kódu</p>
-              <p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Vytvořit vlastní skupinu a pozvat ostatní</p>
-            </div>
-          </button>
-          <div style={{borderTop:"1.5px solid var(--bf-border)",paddingTop:"1rem",marginTop:"0.5rem"}}>
-            <div className="bf-label" style={{marginBottom:8,textAlign:"center"}}>Administrátor</div>
-            <div style={{display:"flex",gap:8}}>
-              <input type="password" placeholder="Heslo" value={adminPwd} onChange={e=>{setAdminPwd(e.target.value);setAdminErr(false);}} onKeyDown={e=>e.key==="Enter"&&loginAdmin()} className={`bf-inp${adminErr?" bf-inp-err":""}`} style={{flex:1}}/>
-              <button onClick={loginAdmin} className="bf-btn-ghost" style={{flexShrink:0}}>→</button>
-            </div>
-            {adminErr&&<p style={{margin:"6px 0 0",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>Nesprávné heslo</p>}
-          </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:"1.5rem"}}>
+        <button onClick={()=>setStep("login")} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-lg)",cursor:"pointer",textAlign:"left"}}>
+          <div style={{width:46,height:46,borderRadius:"var(--bf-r-md)",background:"var(--bf-accent-dim)",color:"var(--bf-accent-text)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>→</div>
+          <div><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Přihlásit se</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Mám již účet</p></div>
+        </button>
+        <button onClick={()=>setStep("register")} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-lg)",cursor:"pointer",textAlign:"left"}}>
+          <div style={{width:46,height:46,borderRadius:"var(--bf-r-md)",background:"var(--bf-success-dim)",color:"var(--bf-success)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>+</div>
+          <div><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Registrovat se</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>První přihlášení</p></div>
+        </button>
+      </div>
+      <div style={{borderTop:"1.5px solid var(--bf-border)",paddingTop:"1rem"}}>
+        <div className="bf-label" style={{marginBottom:8,textAlign:"center"}}>Administrátor</div>
+        <div style={{display:"flex",gap:8}}>
+          <input type="password" placeholder="Heslo" value={adminPwd} onChange={e=>{setAdminPwd(e.target.value);setAdminErr(false);}} onKeyDown={e=>e.key==="Enter"&&loginAdmin()} className={`bf-inp${adminErr?" bf-inp-err":""}`} style={{flex:1}}/>
+          <button onClick={loginAdmin} className="bf-btn-ghost" style={{flexShrink:0}}>→</button>
         </div>
-      )}
+        {adminErr&&<p style={{margin:"6px 0 0",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>Nesprávné heslo</p>}
+      </div>
+    </div>
+  );
 
-      {/* ── path: enter code ── */}
-      {loginPath==="code"&&!ws&&(
-        <>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.25rem"}}>
-            <button onClick={()=>{setLoginPath(null);setWsErr("");}} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
-            <div className="bf-label" style={{margin:0}}>Kód skupiny</div>
-          </div>
-          {invInfo&&<div style={{background:"var(--bf-success-dim)",border:"1.5px solid var(--bf-success)",borderRadius:"var(--bf-r-md)",padding:"12px 16px",marginBottom:"1rem"}}><p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"var(--bf-success)",fontFamily:"var(--bf-font)"}}>Pozvánka do týmu {invInfo.teamName}</p><p style={{margin:0,fontSize:12,color:"var(--bf-success)",fontFamily:"var(--bf-font)"}}>Zadej kód skupiny — automaticky se připojíš.</p></div>}
-          <div className="bf-card">
-            <div style={{display:"flex",gap:8,marginBottom:6}}>
-              <input placeholder="Kód skupiny (např. BEATFIT)" value={wsIn} onChange={e=>{setWsIn(e.target.value.toUpperCase());setWsErr("");}} onKeyDown={e=>e.key==="Enter"&&enterWs()} className={`bf-inp bf-inp-mono${wsErr?" bf-inp-err":""}`} style={{flex:1,fontSize:18,letterSpacing:"0.15em",textAlign:"center"}}/>
-              <button onClick={enterWs} disabled={wsLoad||!wsIn.trim()} className="bf-btn" style={{width:"auto",padding:"11px 20px",fontSize:18,flexShrink:0}}>{wsLoad?"…":"→"}</button>
-            </div>
-            {wsErr&&<p style={{margin:0,fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{wsErr}</p>}
-          </div>
-        </>
-      )}
+  // ══ LOGIN ════════════════════════════════════════════════════════════════
+  if(step==="login")return(
+    <div style={P}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"1rem 0 1.5rem"}}>
+        <button onClick={()=>{setStep("start");setAuthErr("");setAuthName("");setAuthPin("");}} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Přihlášení</h2>
+      </div>
+      {authErr&&<div className="bf-err-banner" style={{marginBottom:"1rem"}}><span>{authErr}</span></div>}
+      <div className="bf-card">
+        <div className="bf-label" style={{marginBottom:4}}>Jméno</div>
+        <input placeholder="Celé jméno" value={authName} onChange={e=>setAuthName(e.target.value)} className="bf-inp" style={{marginBottom:12}}/>
+        <div className="bf-label" style={{marginBottom:4}}>PIN</div>
+        <input type="password" inputMode="numeric" maxLength={6} placeholder="Zadej PIN" value={authPin} onChange={e=>setAuthPin(e.target.value.replace(/\D/g,""))} onKeyDown={e=>e.key==="Enter"&&doLogin()} className="bf-inp-pin" style={{marginBottom:16}}/>
+        <button onClick={doLogin} disabled={!authName.trim()||authPin.length<4||authLoad} className="bf-btn">{authLoad?"Přihlašuji…":"Přihlásit se →"}</button>
+      </div>
+    </div>
+  );
 
-      {/* ── path: new workspace + user ── */}
-      {loginPath==="new"&&(
-        <>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.25rem"}}>
-            <button onClick={()=>setLoginPath(null)} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
-            <div className="bf-label" style={{margin:0}}>Nová skupina</div>
-          </div>
-          <ErrBanner/>
-          <div className="bf-card">
-            <div className="bf-label" style={{marginBottom:4}}>Název skupiny</div>
-            <input placeholder="Např. Moje skupina, Práce 2025…" value={regWsName} onChange={e=>setRegWsName(e.target.value)} className="bf-inp" style={{marginBottom:16}}/>
-            <div style={{height:"1.5px",background:"var(--bf-border)",margin:"0 0 16px"}}/>
-            <div className="bf-label" style={{marginBottom:4}}>Tvoje jméno</div>
-            <input placeholder="Celé jméno" value={regName} onChange={e=>setRegName(e.target.value)} className="bf-inp" style={{marginBottom:8}}/>
-            <label className="bf-label" style={{marginBottom:4}}>Datum narození</label>
-            <input type="date" value={regDob} onChange={e=>setRegDob(e.target.value)} className="bf-inp bf-inp-mono" style={{marginBottom:8}}/>
-            <label className="bf-label" style={{marginBottom:4}}>PIN (min. 4 číslice)</label>
-            <input type="password" inputMode="numeric" maxLength={6} value={regPin} onChange={e=>setRegPin(e.target.value.replace(/\D/g,""))} className="bf-inp-pin" style={{marginBottom:16}}/>
-            <button onClick={createWsAndRegister} disabled={!regWsName.trim()||!regName.trim()||!regDob||regPin.length<4||saving} className="bf-btn">{saving?"Vytvářím…":"Vytvořit skupinu a začít →"}</button>
-          </div>
-        </>
-      )}
+  // ══ REGISTER ════════════════════════════════════════════════════════════
+  if(step==="register")return(
+    <div style={P}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"1rem 0 1.5rem"}}>
+        <button onClick={()=>{setStep("start");setAuthErr("");setAuthName("");setAuthDob("");setAuthPin("");setAuthPin2("");}} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Registrace</h2>
+      </div>
+      {authErr&&<div className="bf-err-banner" style={{marginBottom:"1rem"}}><span>{authErr}</span></div>}
+      <div className="bf-card">
+        <div className="bf-label" style={{marginBottom:4}}>Celé jméno</div>
+        <input placeholder="Jak tě ostatní uvidí v žebříčku" value={authName} onChange={e=>setAuthName(e.target.value)} className="bf-inp" style={{marginBottom:12}}/>
+        <div className="bf-label" style={{marginBottom:4}}>Datum narození</div>
+        <input type="date" value={authDob} onChange={e=>setAuthDob(e.target.value)} className="bf-inp bf-inp-mono" style={{marginBottom:12}}/>
+        <div className="bf-label" style={{marginBottom:4}}>PIN (min. 4 číslice)</div>
+        <input type="password" inputMode="numeric" maxLength={6} value={authPin} onChange={e=>setAuthPin(e.target.value.replace(/\D/g,""))} className="bf-inp-pin" style={{marginBottom:8}}/>
+        <input type="password" inputMode="numeric" maxLength={6} placeholder="Potvrď PIN" value={authPin2} onChange={e=>setAuthPin2(e.target.value.replace(/\D/g,""))} onKeyDown={e=>e.key==="Enter"&&doRegister()} className="bf-inp-pin" style={{marginBottom:16}}/>
+        <button onClick={doRegister} disabled={!authName.trim()||!authDob||authPin.length<4||authLoad} className="bf-btn">{authLoad?"Registruji…":"Zaregistrovat se →"}</button>
+      </div>
+    </div>
+  );
 
-      {/* ── known workspace: user list + register ── */}
-      {loginPath==="code"&&ws&&(
-        <>
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 0.75rem",borderBottom:"1.5px solid var(--bf-border)",marginBottom:"1.25rem"}}>
-            <button onClick={()=>{setWs(null);setPendU(null);setWsIn("");}} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
-            <div style={{flex:1}}>
-              <p style={{margin:0,fontSize:17,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{ws.name}</p>
-              <p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.1em"}}>{ws.code}</p>
-            </div>
-          </div>
-          <ErrBanner/>
-          {Object.keys(users).length>0&&(
-            <div style={{marginBottom:"1.5rem"}}>
-              <div className="bf-label" style={{marginBottom:10}}>Přihlásit se jako</div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {Object.entries(users).sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,u])=>{
-                  const streak=calcStreak(entries[id]||{}),sel=pendU===id;
-                  return(
-                    <div key={id}>
-                      <button onClick={()=>selectU(id)} className={`bf-user-row${sel?" selected":""}`}>
-                        <div className="bf-av" style={{width:36,height:36,fontSize:14}}>{u.name[0]}</div>
-                        <span style={{fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)",fontSize:15,flex:1,textAlign:"left"}}>{u.name}</span>
-                        {streak>1&&<span className="bf-badge bf-badge-accent" style={{fontSize:11}}>{streak}🔥</span>}
-                        <span style={{color:"var(--bf-text3)",fontSize:16}}>{sel?"↑":"›"}</span>
-                      </button>
-                      {sel&&(
-                        <div className="bf-pin-panel">
-                          {setPinMode?(
-                            <>
-                              <p style={{margin:"0 0 10px",fontSize:13,color:"var(--bf-text2)",fontFamily:"var(--bf-font)",fontWeight:500}}>Nastav si PIN (min. 4 číslice)</p>
-                              <input type="password" inputMode="numeric" maxLength={6} placeholder="Nový PIN" value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\D/g,""))} className="bf-inp-pin" style={{marginBottom:8}}/>
-                              <input type="password" inputMode="numeric" maxLength={6} placeholder="Potvrď PIN" value={newPinC} onChange={e=>setNewPinC(e.target.value.replace(/\D/g,""))} className="bf-inp-pin" style={{marginBottom:10}}/>
-                              {err&&<p style={{margin:"0 0 8px",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{err}</p>}
-                              <button onClick={saveNewPin} disabled={newPin.length<4||newPin!==newPinC} className="bf-btn">Uložit PIN a přihlásit →</button>
-                            </>
-                          ):(
-                            <>
-                              <input type="password" inputMode="numeric" maxLength={6} placeholder="PIN" value={pinIn} onChange={e=>{setPinIn(e.target.value.replace(/\D/g,""));setPinErr(false);}} onKeyDown={e=>e.key==="Enter"&&verifyPin()} autoFocus className={`bf-inp-pin${pinErr?" err":""}`} style={{marginBottom:pinErr?6:10}}/>
-                              {pinErr&&<p style={{margin:"0 0 8px",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)",textAlign:"center"}}>Nesprávný PIN</p>}
-                              <button onClick={verifyPin} disabled={pinIn.length<4} className="bf-btn">Přihlásit →</button>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="bf-card">
-            <div className="bf-label" style={{marginBottom:12}}>Nový hráč</div>
-            <input placeholder="Celé jméno" value={newName} onChange={e=>setNewName(e.target.value)} className="bf-inp" style={{marginBottom:8}}/>
-            <label className="bf-label" style={{marginBottom:4}}>Datum narození</label>
-            <input type="date" value={newDob} onChange={e=>setNewDob(e.target.value)} className="bf-inp bf-inp-mono" style={{marginBottom:8}}/>
-            <label className="bf-label" style={{marginBottom:4}}>PIN (min. 4 číslice)</label>
-            <input type="password" inputMode="numeric" maxLength={6} value={newRegPin} onChange={e=>setNewRegPin(e.target.value.replace(/\D/g,""))} className="bf-inp-pin" style={{marginBottom:12}}/>
-            <button onClick={register} disabled={!newName.trim()||!newDob||newRegPin.length<4||saving} className="bf-btn">{saving?"Registruji…":"Zaregistrovat se →"}</button>
-          </div>
-        </>
-      )}
+  // ══ WS-SELECT ═══════════════════════════════════════════════════════════
+  if(step==="ws-select")return(
+    <div style={P}>
+      <div style={{padding:"1.5rem 0 1rem"}}>
+        <p style={{margin:"0 0 4px",fontSize:18,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Vítej, {userMeta?.name}!</p>
+        <p style={{margin:0,fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Vyber skupinu nebo vytvoř novou.</p>
+      </div>
+      {knownWs.length>0&&<>
+        <div className="bf-label" style={{marginBottom:8}}>Moje skupiny</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1.5rem"}}>
+          {knownWs.map(w=>(
+            <button key={w.id} onClick={async()=>{setActiveWsId(w.id);await loadWsData(w.id,uid);localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:w.id}));setStep("app");}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",cursor:"pointer",textAlign:"left"}}>
+              <div style={{width:40,height:40,borderRadius:"var(--bf-r-sm)",background:"var(--bf-accent-dim)",color:"var(--bf-accent-text)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,flexShrink:0,fontFamily:"var(--bf-font)"}}>{w.name[0]}</div>
+              <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{w.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.08em"}}>{w.code}</p></div>
+              <span style={{fontSize:20,color:"var(--bf-text3)"}}>›</span>
+            </button>
+          ))}
+        </div>
+      </>}
+      <div className="bf-label" style={{marginBottom:8}}>Přidat skupinu</div>
+      <div style={{display:"flex",gap:6,marginBottom:"1rem"}}>
+        <button onClick={()=>setAddWsMode("code")} className={`bf-chip${addWsMode==="code"?" active":""}`}>Zadat kód</button>
+        <button onClick={()=>setAddWsMode("new")} className={`bf-chip${addWsMode==="new"?" active":""}`}>Vytvořit novou</button>
+      </div>
+      {addWsMode==="code"&&<div className="bf-card" style={{marginBottom:"1rem"}}>
+        <div style={{display:"flex",gap:8,marginBottom:addWsErr?6:0}}>
+          <input placeholder="Kód skupiny" value={addWsCode} onChange={e=>{setAddWsCode(e.target.value.toUpperCase());setAddWsErr("");}} onKeyDown={e=>e.key==="Enter"&&addWsByCode()} className="bf-inp bf-inp-mono" style={{flex:1,fontSize:17,letterSpacing:"0.15em",textAlign:"center"}}/>
+          <button onClick={addWsByCode} disabled={addWsLoad||!addWsCode.trim()} className="bf-btn" style={{width:"auto",padding:"11px 18px",flexShrink:0}}>{addWsLoad?"…":"→"}</button>
+        </div>
+        {addWsErr&&<p style={{margin:0,fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{addWsErr}</p>}
+      </div>}
+      {addWsMode==="new"&&<div className="bf-card" style={{marginBottom:"1rem"}}>
+        <div className="bf-label" style={{marginBottom:4}}>Název skupiny</div>
+        <input placeholder="Např. Práce 2025, Kamarádi…" value={addWsName} onChange={e=>setAddWsName(e.target.value)} className="bf-inp" style={{marginBottom:10}} onKeyDown={e=>e.key==="Enter"&&addWsNew()}/>
+        {addWsErr&&<p style={{margin:"0 0 8px",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{addWsErr}</p>}
+        <button onClick={addWsNew} disabled={!addWsName.trim()||addWsLoad} className="bf-btn">{addWsLoad?"Vytvářím…":"Vytvořit skupinu →"}</button>
+      </div>}
+      <button onClick={logout} className="bf-btn-out" style={{width:"100%",justifyContent:"center",marginTop:"1rem"}}>Odhlásit se</button>
     </div>
   );
 
   // ══ ADMIN ════════════════════════════════════════════════════════════════
-  if(view==="admin")return(
+  if(step==="admin")return(
     <div style={P}>
-      <div className="bf-topbar">
-        <div><div className="bf-label">Panel</div><p style={{margin:0,fontWeight:800,fontSize:17,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Administrátor</p></div>
-        <button onClick={()=>{setView("login");setAdminPwd("");}} className="bf-btn-out">Odhlásit</button>
-      </div>
-      <ErrBanner/>
+      <div className="bf-topbar"><div><div className="bf-label">Panel</div><p style={{margin:0,fontWeight:800,fontSize:17,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Administrátor</p></div><button onClick={()=>{setStep("start");setAdminPwd("");}} className="bf-btn-out">Odhlásit</button></div>
+      <Err/>
       <div className="bf-nav" style={{marginBottom:"1.25rem"}}>
-        {[["workspaces","Skupiny"],["pts","Koeficienty"],["players","Hráči"]].map(([t,l])=>(
-          <button key={t} onClick={()=>{setAdminTab(t);setEditUser(null);setEditWs(null);setErr(null);}} className={`bf-nav-btn${adminTab===t?" active":""}`}>{l}</button>
-        ))}
+        {[["workspaces","Skupiny"],["pts","Koeficienty"],["players","Hráči"]].map(([t,l])=>(<button key={t} onClick={()=>{setAdminTab(t);setEditUser(null);setEditWs(null);setErr(null);}} className={`bf-nav-btn${adminTab===t?" active":""}`}>{l}</button>))}
       </div>
-
       {adminTab==="workspaces"&&<>
         <div className="bf-label" style={{marginBottom:8}}>Skupiny</div>
         {editWs?(
@@ -617,7 +608,7 @@ export default function App(){
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1.5rem"}}>
               {Object.entries(allWs).map(([id,w])=>{const uc=(allWsU[id]||[]).length;return(
                 <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)"}}>
-                  <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{w.name}</p><p style={{margin:0,fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)",letterSpacing:"0.08em"}}>{w.code} · {uc} {uc===1?"hráč":"hráčů"}</p></div>
+                  <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{w.name}</p><p style={{margin:0,fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)",letterSpacing:"0.08em"}}>{w.code} · {uc} {uc===1?"člen":"členů"}</p></div>
                   <button onClick={()=>{setEditWs(id);setEditWsN(w.name);setEditWsC(w.code);}} className="bf-btn-ghost" style={{fontSize:12,padding:"6px 12px"}}>Upravit</button>
                   <button onClick={()=>deleteAdminWs(id)} className="bf-btn-danger" style={{fontSize:12,padding:"6px 12px"}}>Smazat</button>
                 </div>
@@ -633,7 +624,6 @@ export default function App(){
           </>
         )}
       </>}
-
       {adminTab==="players"&&<>
         <div className="bf-label" style={{marginBottom:8}}>Vyberte skupinu</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:"1rem"}}>
@@ -646,7 +636,7 @@ export default function App(){
               <input value={editName} onChange={e=>setEditName(e.target.value)} className="bf-inp" style={{marginBottom:8}}/>
               <label className="bf-label" style={{marginBottom:4}}>Datum narození</label>
               <input type="date" value={editDob} onChange={e=>setEditDob(e.target.value)} className="bf-inp bf-inp-mono" style={{marginBottom:12}}/>
-              <div style={{display:"flex",gap:8}}><button onClick={saveAdminEditUser} className="bf-btn" style={{flex:1}}>Uložit</button><button onClick={()=>setEditUser(null)} className="bf-btn-ghost" style={{flex:1}}>Zrušit</button></div>
+              <div style={{display:"flex",gap:8}}><button onClick={saveAdminUser} className="bf-btn" style={{flex:1}}>Uložit</button><button onClick={()=>setEditUser(null)} className="bf-btn-ghost" style={{flex:1}}>Zrušit</button></div>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -656,15 +646,14 @@ export default function App(){
                   <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{u.name}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{calcAge(u.dob)} let · {u.entryCount} záz. · PIN: {u.pin?<span style={{color:"var(--bf-success)"}}>✓</span>:<span style={{color:"var(--bf-danger)"}}>❗</span>}</p></div>
                   <button onClick={()=>resetPin(u.id,aSelWs)} className="bf-btn-ghost" style={{fontSize:11,padding:"5px 10px"}}>PIN</button>
                   <button onClick={()=>{setEditUser(u.id);setEditName(u.name);setEditDob(u.dob);}} className="bf-btn-ghost" style={{fontSize:11,padding:"5px 10px"}}>Upravit</button>
-                  <button onClick={()=>deleteAdminUser(u.id,aSelWs)} className="bf-btn-danger" style={{fontSize:11,padding:"5px 10px"}}>Smazat</button>
+                  <button onClick={()=>deleteAdminUser(u.id,aSelWs)} className="bf-btn-danger" style={{fontSize:11,padding:"5px 10px"}}>Odebrat</button>
                 </div>
               ))}
-              {!(allWsU[aSelWs]||[]).length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Skupina zatím nemá žádné hráče.</p>}
+              {!(allWsU[aSelWs]||[]).length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Žádní členové.</p>}
             </div>
           )}
         </>}
       </>}
-
       {adminTab==="pts"&&<>
         <div className="bf-label" style={{marginBottom:10}}>Body za jednotku</div>
         <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1rem"}}>
@@ -683,33 +672,61 @@ export default function App(){
     </div>
   );
 
-  // ══ shared nav ════════════════════════════════════════════════════════════
-  const TopBar=()=>(
-    <div className="bf-topbar">
-      <div>
-        <div className="bf-label" style={{marginBottom:1}}>{ws?.name}</div>
-        <p style={{margin:0,fontWeight:800,fontSize:16,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{user?.name}</p>
-      </div>
-      <button onClick={logout} className="bf-btn-out">Odhlásit</button>
+  // ══ APP SHARED ════════════════════════════════════════════════════════════
+  const WsDropdown=()=>(
+    <div style={{position:"relative"}}>
+      <button onClick={()=>setWsDropOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:6,background:"var(--bf-surface2)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",padding:"6px 12px",cursor:"pointer",fontFamily:"var(--bf-font)"}}>
+        <span style={{fontSize:13,fontWeight:700,color:"var(--bf-text)",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{activeWs?.name||"Skupina"}</span>
+        <span style={{fontSize:10,color:"var(--bf-text3)"}}>{wsDropOpen?"▲":"▼"}</span>
+      </button>
+      {wsDropOpen&&(
+        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,minWidth:200,background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",zIndex:100,overflow:"hidden",boxShadow:"0 4px 16px rgba(0,0,0,0.15)"}}>
+          {knownWs.map(w=>(
+            <button key={w.id} onClick={()=>switchWs(w.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 14px",background:w.id===activeWsId?"var(--bf-accent-dim)":"transparent",border:"none",cursor:"pointer",textAlign:"left",borderBottom:"1.5px solid var(--bf-border)"}}>
+              <span style={{fontSize:13,color:w.id===activeWsId?"var(--bf-accent-text)":"var(--bf-text3)",minWidth:16}}>{w.id===activeWsId?"✓":""}</span>
+              <span style={{fontSize:13,fontWeight:w.id===activeWsId?700:500,color:w.id===activeWsId?"var(--bf-accent-text)":"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{w.name}</span>
+            </button>
+          ))}
+          <button onClick={()=>{setWsDropOpen(false);setStep("ws-select");setAddWsMode("code");}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 14px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",borderBottom:"1.5px solid var(--bf-border)"}}>
+            <span style={{fontSize:13,color:"var(--bf-text3)",minWidth:16}}>+</span>
+            <span style={{fontSize:13,fontWeight:500,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>Přidat skupinu</span>
+          </button>
+          <button onClick={logout} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 14px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:13,color:"var(--bf-danger)",minWidth:16}}>↩</span>
+            <span style={{fontSize:13,fontWeight:500,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>Odhlásit se</span>
+          </button>
+        </div>
+      )}
     </div>
   );
+
+  const TopBar=()=>(
+    <div className="bf-topbar" onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+      <div>
+        <div className="bf-label" style={{marginBottom:1}}>{userMeta?.name}</div>
+        <WsDropdown/>
+      </div>
+      {loading&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Načítám…</span>}
+    </div>
+  );
+
   const Nav=()=>(
     <div className="bf-nav">
       {[["log","Záznam"],["leaderboard","Žebříček"],["teams","Týmy"],["stats","Moje"]].map(([v,l])=>(
-        <button key={v} onClick={()=>{setView(v);if(v==="teams")setTeamView("list");}} className={`bf-nav-btn${view===v?" active":""}`}>{l}</button>
+        <button key={v} onClick={()=>{setView(v);if(v==="teams")setTeamView("list");setWsDropOpen(false);}} className={`bf-nav-btn${view===v?" active":""}`}>{l}</button>
       ))}
     </div>
   );
 
   // ══ LOG ══════════════════════════════════════════════════════════════════
   if(view==="log"){
-    const age=calcAge(user.dob),score=calcScore(form,age,pts),streak=calcStreak(entries[uid]||{});
+    const age=calcAge(userMeta?.dob),score=calcScore(form,age,pts),streak=calcStreak(entries[uid]||{});
     const weekGoal=parseFloat(goals[uid])||0;
     const weekScore=Object.entries(entries[uid]||{}).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts),0);
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     return(
-      <div style={P}>
-        <TopBar/><Nav/><ErrBanner/>
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <TopBar/><Nav/><Err/>
         <input type="date" value={logDate} max={todayStr()} onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}} className="bf-inp bf-inp-mono" style={{marginBottom:"1rem",textAlign:"center",fontSize:14}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Skóre",v:score.toFixed(1)},{l:"Věk. koef.",v:`×${ageMult(age).toFixed(2)}`},{l:"Streak",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
@@ -745,11 +762,9 @@ export default function App(){
     const actW={};
     for(const a of AM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
     return(
-      <div style={P}>
-        <TopBar/><Nav/><ErrBanner/>
-        {lbMode==="global"?(
-          <div className="bf-chips">{[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`bf-chip${period===k?" active":""}`}>{l}</button>))}</div>
-        ):(
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <TopBar/><Nav/><Err/>
+        {lbMode==="global"?(<div className="bf-chips">{[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`bf-chip${period===k?" active":""}`}>{l}</button>))}</div>):(
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem",padding:"10px 14px",background:"var(--bf-surface2)",borderRadius:"var(--bf-r-md)",border:"1.5px solid var(--bf-border)"}}>
             <button onClick={()=>setLbMode("global")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
             <div style={{flex:1}}><p style={{margin:0,fontSize:14,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{actS?.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{actS?.start_date} → {actS?.end_date}</p></div>
@@ -789,7 +804,7 @@ export default function App(){
             <div key={a.key} className="bf-card" style={{padding:"10px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><div className="bf-act-icon" style={{width:26,height:26,borderRadius:6,fontSize:11,background:a.color+"20",color:a.color}}>{a.icon}</div><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.label}</span></div>
               <p style={{margin:"0 0 2px",fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{actW[a.key].name}</p>
-              <p style={{margin:0,fontSize:12,color:"var(--bf-text2)",fontFamily:"var(--bf-mono)",fontWeight:500}}>{a.unit==="km"?actW[a.key].val.toFixed(1):a.unit==="kr"?Math.round(actW[a.key].val).toLocaleString():Math.round(actW[a.key].val)} {a.unit}</p>
+              <p style={{margin:0,fontSize:12,color:"var(--bf-text2)",fontFamily:"var(--bf-mono)",fontWeight:500}}>{fmtVal(a,actW[a.key].val)} {a.unit}</p>
             </div>
           ))}
         </div>
@@ -800,14 +815,14 @@ export default function App(){
   // ══ TEAMS ════════════════════════════════════════════════════════════════
   if(view==="teams"){
     if(teamView==="list")return(
-      <div style={P}>
-        <TopBar/><Nav/><ErrBanner/>
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <TopBar/><Nav/><Err/>
         <div className="bf-section-header" style={{marginBottom:"1rem"}}><div className="bf-label" style={{margin:0}}>Moje týmy</div><button onClick={()=>setTeamView("create")} className="bf-btn-sm">+ Nový tým</button></div>
         {!myTeamIds.length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zatím nejsi v žádném týmu.</p>}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {myTeamIds.map(tid=>{const t=teams[tid];if(!t)return null;const mc=(members[tid]||[]).length,tsc=Object.values(seasons).filter(s=>s.team_id===tid).length;return(
             <button key={tid} onClick={()=>{setActiveTeam(tid);setTeamView("detail");setTTab("score");setTSeason("all");setShowTSF(false);}} className="bf-team-card">
-              <div className="bf-team-icon">T</div>
+              <div className="bf-team-icon">{t.name[0]}</div>
               <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{t.name}</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{mc} {mc===1?"člen":"členů"}{tsc>0?` · ${tsc} výzev`:""}{t.created_by===uid?" · tvůj":""}</p></div>
               <span style={{fontSize:18,color:"var(--bf-text3)"}}>›</span>
             </button>
@@ -816,8 +831,8 @@ export default function App(){
       </div>
     );
     if(teamView==="create")return(
-      <div style={P}>
-        <TopBar/><Nav/><ErrBanner/>
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <TopBar/><Nav/><Err/>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.5rem"}}><button onClick={()=>setTeamView("list")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button><div className="bf-label" style={{margin:0}}>Nový tým</div></div>
         <div className="bf-card"><input placeholder="Název týmu" value={newTName} onChange={e=>setNewTName(e.target.value)} className="bf-inp" style={{marginBottom:12}} onKeyDown={e=>e.key==="Enter"&&createTeam()}/><button onClick={createTeam} disabled={!newTName.trim()||saving} className="bf-btn">{saving?"Vytvářím…":"Vytvořit tým →"}</button></div>
       </div>
@@ -828,14 +843,15 @@ export default function App(){
       const actS=tSeason.startsWith("season:")?seasons[tSeason.slice(7)]:null;
       const tMids=members[activeTeam]||[];
       const lb=(()=>{const t2=todayStr(),w2=weekAgoStr(),res={};
-        for(const id of tMids){const u=users[id];if(!u)continue;const days=entries[id]||{};let sc2=0;const acts={};for(const a of AM)acts[a.key]=0;
+        for(const id of tMids){const u=wsUsers[id];if(!u)continue;const days=entries[id]||{};let sc2=0;const acts={};for(const a of AM)acts[a.key]=0;
           for(const[date,e] of Object.entries(days)){if(actS){if(date<actS.start_date||date>actS.end_date)continue;}else{if(tPeriod==="today"&&date!==t2)continue;if(tPeriod==="week"&&date<w2)continue;}
-          sc2+=calcScore(e,calcAge(u.dob),pts);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;}res[id]={sc:sc2,name:u.name,age:calcAge(u.dob),acts};}return res;})();
+          sc2+=calcScore(e,calcAge(u.dob),pts);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;}res[id]={sc:sc2,name:u.name,dob:u.dob,acts};}return res;})();
       const sorted=Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc),myRank=sorted.findIndex(([id])=>id===uid)+1;
-      const invUrl=`${window.location.origin}${window.location.pathname}?invite=${team.invite_code}&ws=${ws.code}`;
+      const activeWsObj=knownWs.find(w=>w.id===activeWsId);
+      const invUrl=`${window.location.origin}${window.location.pathname}?invite=${team.invite_code}&ws=${activeWsObj?.code||""}`;
       return(
-        <div style={P}>
-          <TopBar/><Nav/><ErrBanner/>
+        <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+          <TopBar/><Nav/><Err/>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem"}}><button onClick={()=>setTeamView("list")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button><div style={{flex:1}}><p style={{margin:0,fontSize:16,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{team.name}</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{tMids.length} členů</p></div><button onClick={()=>leaveTeam(activeTeam)} className="bf-btn-danger" style={{padding:"6px 12px",fontSize:12}}>Opustit</button></div>
           <div className="bf-card" style={{marginBottom:"1rem"}}><div className="bf-label" style={{marginBottom:8}}>Pozvánka</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input readOnly value={invUrl} className="bf-inp bf-inp-mono" style={{flex:1,fontSize:10,cursor:"text"}}/><button onClick={()=>navigator.clipboard.writeText(invUrl)} className="bf-btn-sm">Kopírovat</button></div></div>
           <div style={{marginBottom:"1rem"}}>
@@ -860,7 +876,7 @@ export default function App(){
               <div key={a.key} className="bf-card" style={{marginBottom:"0.75rem"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div className="bf-act-icon" style={{width:30,height:30,borderRadius:7,fontSize:12,background:a.color+"20",color:a.color}}>{a.icon}</div><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p></div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {vals.filter(v=>v.val>0).map((v,i)=>(<div key={v.name}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,fontWeight:v.isMe?700:500,color:v.isMe?"var(--bf-text)":"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>{i===0?"🥇 ":""}{v.name}</span><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text)",fontWeight:600}}>{a.unit==="km"?v.val.toFixed(1):a.unit==="kr"?Math.round(v.val).toLocaleString():Math.round(v.val)} {a.unit}</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${(v.val/mx)*100}%`,background:v.isMe?a.color:"var(--bf-surface3)",opacity:v.isMe?1:0.6}}/></div></div>))}
+                  {vals.filter(v=>v.val>0).map((v,i)=>(<div key={v.name}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,fontWeight:v.isMe?700:500,color:v.isMe?"var(--bf-text)":"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>{i===0?"🥇 ":""}{v.name}</span><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text)",fontWeight:600}}>{fmtVal(a,v.val)} {a.unit}</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${(v.val/mx)*100}%`,background:v.isMe?a.color:"var(--bf-surface3)",opacity:v.isMe?1:0.6}}/></div></div>))}
                 </div>
               </div>
             );})}
@@ -873,7 +889,7 @@ export default function App(){
   // ══ STATS ════════════════════════════════════════════════════════════════
   if(view==="stats"){
     const myDays=entries[uid]||{},dates=Object.keys(myDays).sort().reverse();
-    const age=calcAge(user.dob),total=dates.reduce((s,d)=>s+calcScore(myDays[d],age,pts),0);
+    const age=calcAge(userMeta?.dob),total=dates.reduce((s,d)=>s+calcScore(myDays[d],age,pts),0);
     const streak=calcStreak(myDays),weekGoal=parseFloat(goals[uid])||0;
     const weekScore=Object.entries(myDays).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts),0);
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
@@ -883,49 +899,31 @@ export default function App(){
     const cScores=cDays.map(d=>calcScore(myDays[d]||{},age,pts));
     const maxSc=Math.max(...cScores,1);
     return(
-      <div style={P}>
-        <TopBar/><Nav/><ErrBanner/>
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <TopBar/><Nav/><Err/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Celkem bodů",v:total.toFixed(0)},{l:"Aktivní dny",v:dates.length},{l:"Streak",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
             <div key={l} className="bf-stat"><div className="bf-label" style={{marginBottom:4}}>{l}</div><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"var(--bf-mono)",color:c||"var(--bf-text)"}}>{v}</p></div>
           ))}
         </div>
 
-        {/* group info */}
+        {/* skupina */}
         <div className="bf-card" style={{marginBottom:"1rem"}}>
           <div className="bf-section-header" style={{marginBottom:8}}>
             <div className="bf-label" style={{margin:0}}>Moje skupina</div>
-            {isWsCreator&&!renameWs&&<button onClick={()=>{setRenameWs(true);setRenameVal(ws.name);}} className="bf-btn-out" style={{fontSize:11}}>Přejmenovat</button>}
+            {isWsCreator&&!renameWs&&<button onClick={()=>{setRenameWs(true);setRenameVal(activeWs?.name||"");}} className="bf-btn-out" style={{fontSize:11}}>Přejmenovat</button>}
           </div>
           {renameWs?(
             <div style={{display:"flex",gap:8}}>
               <input value={renameVal} onChange={e=>setRenameVal(e.target.value)} className="bf-inp" style={{flex:1}} onKeyDown={e=>e.key==="Enter"&&doRenameWs()} autoFocus/>
-              <button onClick={doRenameWs} className="bf-btn-sm" style={{flexShrink:0}}>Uložit</button>
-              <button onClick={()=>setRenameWs(false)} className="bf-btn-ghost" style={{flexShrink:0}}>Zrušit</button>
+              <button onClick={doRenameWs} className="bf-btn-sm">Uložit</button>
+              <button onClick={()=>setRenameWs(false)} className="bf-btn-ghost">Zrušit</button>
             </div>
           ):(
             <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{flex:1}}>
-                <p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{ws.name}</p>
-                <p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.1em"}}>Kód: {ws.code}</p>
-              </div>
-              <button onClick={()=>navigator.clipboard.writeText(ws.code)} className="bf-btn-out" style={{fontSize:11}}>Kopírovat kód</button>
+              <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{activeWs?.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)",letterSpacing:"0.1em"}}>Kód: {activeWs?.code}</p></div>
+              <button onClick={()=>activeWs?.code&&navigator.clipboard.writeText(activeWs.code)} className="bf-btn-out" style={{fontSize:11}}>Kopírovat kód</button>
             </div>
-          )}
-          <div style={{height:"1.5px",background:"var(--bf-border)",margin:"12px 0"}}/>
-          {joinMode?(
-            <>
-              <div className="bf-label" style={{marginBottom:6}}>Přejít do jiné skupiny</div>
-              <div style={{display:"flex",gap:8,marginBottom:joinErr?6:0}}>
-                <input placeholder="Kód skupiny" value={joinCode} onChange={e=>{setJoinCode(e.target.value.toUpperCase());setJoinErr("");}} className="bf-inp bf-inp-mono" style={{flex:1,letterSpacing:"0.1em"}} onKeyDown={e=>e.key==="Enter"&&joinAnotherGroup()}/>
-                <button onClick={joinAnotherGroup} className="bf-btn-sm" style={{flexShrink:0}}>→</button>
-                <button onClick={()=>{setJoinMode(false);setJoinCode("");setJoinErr("");}} className="bf-btn-ghost" style={{flexShrink:0}}>Zrušit</button>
-              </div>
-              {joinErr&&<p style={{margin:"4px 0 0",fontSize:12,color:"var(--bf-danger)",fontFamily:"var(--bf-font)"}}>{joinErr}</p>}
-              <p style={{margin:"8px 0 0",fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Po přechodu budeš odhlášen a přesměrován na přihlášení v nové skupině.</p>
-            </>
-          ):(
-            <button onClick={()=>setJoinMode(true)} className="bf-btn-ghost" style={{width:"100%",justifyContent:"center",fontSize:13}}>Přejít do jiné skupiny →</button>
           )}
         </div>
 
@@ -933,10 +931,11 @@ export default function App(){
           <div className="bf-label" style={{marginBottom:10}}>Týdenní cíl (body)</div>
           <div style={{display:"flex",gap:8,marginBottom:weekGoal>0?12:0}}>
             <input type="number" min="0" value={goalIn} onChange={e=>setGoalIn(e.target.value)} placeholder="Nastav cíl na tento týden" className="bf-inp bf-inp-mono" style={{flex:1}}/>
-            <button onClick={saveGoal} className="bf-btn-sm" style={{flexShrink:0}}>{goalFlash?"✓":"Uložit"}</button>
+            <button onClick={saveGoal} className="bf-btn-sm">{goalFlash?"✓":"Uložit"}</button>
           </div>
           {weekGoal>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,color:"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>Tento týden</span><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text2)",fontWeight:600}}>{weekScore.toFixed(0)} / {weekGoal} b</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${goalPct}%`,background:goalPct>=100?"var(--bf-success)":"var(--bf-accent)"}}/></div>{goalPct>=100&&<p style={{margin:"8px 0 0",fontSize:12,color:"var(--bf-success)",fontWeight:700,fontFamily:"var(--bf-font)"}}>Cíl splněn! 🎉</p>}</>}
         </div>
+
         <div className="bf-label" style={{marginBottom:8}}>Aktivita — posledních 14 dní</div>
         <div className="bf-card" style={{marginBottom:"1rem",padding:"1rem"}}>
           <div style={{display:"flex",alignItems:"flex-end",gap:3,height:68}}>
@@ -944,18 +943,20 @@ export default function App(){
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}><span style={{fontSize:9,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)"}}>{cDays[0].slice(5)}</span><span style={{fontSize:9,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)"}}>dnes</span></div>
         </div>
+
         <div className="bf-label" style={{marginBottom:8}}>Celkové součty</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:"1.25rem"}}>
           {AM.filter(a=>totals[a.key]>0).map(a=>(
             <div key={a.key} className="bf-card" style={{padding:"10px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><div className="bf-act-icon" style={{width:24,height:24,borderRadius:6,fontSize:10,background:a.color+"20",color:a.color}}>{a.icon}</div><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.label}</span></div>
-              <p style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{a.unit==="km"?totals[a.key].toFixed(1):a.unit==="kr"?Math.round(totals[a.key]).toLocaleString():Math.round(totals[a.key])}<span style={{fontSize:11,fontWeight:500,color:"var(--bf-text3)",marginLeft:3}}>{a.unit}</span></p>
+              <p style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{fmtVal(a,totals[a.key])}<span style={{fontSize:11,fontWeight:500,color:"var(--bf-text3)",marginLeft:3}}>{a.unit}</span></p>
             </div>
           ))}
         </div>
+
         <div className="bf-section-header" style={{marginBottom:8}}>
           <div className="bf-label" style={{margin:0}}>Historie</div>
-          <button onClick={()=>exportCSV(user.name,myDays,pts,age)} className="bf-btn-out" style={{fontSize:11}}>Export CSV ↓</button>
+          <button onClick={()=>exportCSV(userMeta?.name,myDays,pts,age)} className="bf-btn-out" style={{fontSize:11}}>Export CSV ↓</button>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {!dates.length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Žádné záznamy.</p>}
@@ -965,7 +966,7 @@ export default function App(){
               <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                 {AM.filter(a=>parseFloat(myDays[d][a.key])>0).map(a=>(
                   <span key={a.key} style={{fontSize:10,background:a.color+"20",color:a.color,padding:"3px 9px",borderRadius:20,fontWeight:700,fontFamily:"var(--bf-font)"}}>
-                    {a.label} {a.unit==="km"?parseFloat(myDays[d][a.key]).toFixed(1):a.unit==="kr"?Math.round(parseFloat(myDays[d][a.key])).toLocaleString():Math.round(parseFloat(myDays[d][a.key]))} {a.unit}
+                    {a.label} {fmtVal(a,parseFloat(myDays[d][a.key]))} {a.unit}
                   </span>
                 ))}
               </div>
