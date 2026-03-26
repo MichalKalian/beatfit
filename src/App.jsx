@@ -4,16 +4,17 @@ import "./beatfit.css";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
-const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05 };
+const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,dreepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003 };
 const AM = [
-  {key:"shyby",   label:"Shyby",    sub:"pull-ups", unit:"ks",icon:"⬆",color:"#c084fc"},
-  {key:"anglicky",label:"Angličáky",sub:"burpees",  unit:"ks",icon:"★",color:"#f97316"},
-  {key:"kliky",   label:"Kliky",    sub:"push-ups", unit:"ks",icon:"▲",color:"#38bdf8"},
-  {key:"dreepy",  label:"Dřepy",    sub:"squats",   unit:"ks",icon:"↓",color:"#34d399"},
-  {key:"sedLehy", label:"Sed-lehy", sub:"sit-ups",  unit:"ks",icon:"↔",color:"#a3e635"},
-  {key:"behKm",   label:"Běh",      sub:"km",       unit:"km",icon:"▶",color:"#fbbf24"},
-  {key:"koloKm",  label:"Kolo",     sub:"km",       unit:"km",icon:"○",color:"#fb7185"},
-  {key:"plankSec",label:"Plank",    sub:"sekund",   unit:"s", icon:"—",color:"#e879f9"},
+  {key:"shyby",   label:"Shyby",    sub:"pull-ups", unit:"ks",  icon:"⬆",color:"#c084fc"},
+  {key:"anglicky",label:"Angličáky",sub:"burpees",  unit:"ks",  icon:"★",color:"#f97316"},
+  {key:"kliky",   label:"Kliky",    sub:"push-ups", unit:"ks",  icon:"▲",color:"#38bdf8"},
+  {key:"dreepy",  label:"Dřepy",    sub:"squats",   unit:"ks",  icon:"↓",color:"#34d399"},
+  {key:"sedLehy", label:"Sed-lehy", sub:"sit-ups",  unit:"ks",  icon:"↔",color:"#a3e635"},
+  {key:"behKm",   label:"Běh",      sub:"km",       unit:"km",  icon:"▶",color:"#fbbf24"},
+  {key:"koloKm",  label:"Kolo",     sub:"km",       unit:"km",  icon:"○",color:"#fb7185"},
+  {key:"plankSec",label:"Plank",    sub:"sekund",   unit:"s",   icon:"—",color:"#e879f9"},
+  {key:"kroky",   label:"Kroky",    sub:"steps",    unit:"kr",  icon:"◆",color:"#06b6d4"},
 ];
 
 const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key]}));
@@ -161,12 +162,9 @@ export default function App(){
 
   async function saveNewPin(){
     if(newPin.length<4||newPin!==newPinC){setErr("PINy se neshodují nebo jsou kratší než 4 číslice.");return;}
-    const targetId = pendU || uid;
-    if(!targetId){setErr("Chyba: neznámý uživatel.");return;}
-    const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",targetId);
-    if(e){setErr(`PIN error: ${e.message} (${e.code})`);return;}
-    setUsers(u=>({...u,[targetId]:{...u[targetId],pin:newPin}}));
-    if(pendU) loginAs(pendU);
+    const{error:e}=await supabase.from("users").update({pin:newPin}).eq("id",pendU);
+    if(e){setErr("Nepodařilo se uložit PIN.");return;}
+    setUsers(u=>({...u,[pendU]:{...u[pendU],pin:newPin}}));loginAs(pendU);
   }
 
   function loginAs(id){
@@ -713,7 +711,6 @@ export default function App(){
               <div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div>
               <span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span>
               {streak>=3&&<span className="bf-badge bf-badge-accent" style={{fontSize:10}}>{streak}🔥</span>}
-              <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",marginRight:4}}>{d.age}r.</span>
               <span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span>
               <span style={{fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>b</span>
             </div>
@@ -824,7 +821,7 @@ export default function App(){
           </div>
           {tTab==="score"&&<><div className="bf-label" style={{marginBottom:8}}>Žebříček bodů</div><div style={{display:"flex",flexDirection:"column",gap:5}}>
             {sorted.length===0&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zatím žádná data.</p>}
-            {sorted.map(([id,d],i)=>(<div key={id} className={`bf-lb-row${id===uid?" me":""}`}><span style={{fontSize:17,minWidth:30,color:RANK_CLR[i]||"var(--bf-text3)",fontWeight:800,fontFamily:"var(--bf-mono)"}}>{MEDALS[i]||`${i+1}.`}</span><div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div><span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",marginRight:4}}>{d.age}r.</span><span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span><span style={{fontSize:10,color:"var(--bf-text3)"}}>b</span></div>))}
+            {sorted.map(([id,d],i)=>(<div key={id} className={`bf-lb-row${id===uid?" me":""}`}><span style={{fontSize:17,minWidth:30,color:RANK_CLR[i]||"var(--bf-text3)",fontWeight:800,fontFamily:"var(--bf-mono)"}}>{MEDALS[i]||`${i+1}.`}</span><div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div><span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span><span style={{fontSize:10,color:"var(--bf-text3)"}}>b</span></div>))}
           </div></>}
           {tTab==="activity"&&<><div className="bf-label" style={{marginBottom:8}}>Porovnání aktivit</div>
             {AM.map(a=>{const vals=sorted.map(([id,d])=>({name:d.name,val:d.acts[a.key]||0,isMe:id===uid})).sort((x,y)=>y.val-x.val);const mx=Math.max(...vals.map(v=>v.val),1);if(vals.every(v=>v.val===0))return null;return(
