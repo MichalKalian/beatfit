@@ -1,58 +1,16 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./beatfit.css";
+import { DEFAULT_PTS, AM, getActs, calcAge, ageMult, calcScore, todayStr, weekAgoStr, dMinus, calcStreak, randCode, fmtVal, exportCSV, seasonStatus, seasonLabel, daysLeft, MEDALS, RANK_CLR } from "./lib/helpers";
+import { Err, SFormCard } from "./components/Misc";
+import Header from "./components/Header";
+import Leaderboard from "./components/Leaderboard";
+import TeamsList from "./components/TeamsList";
+import TeamCreate from "./components/TeamCreate";
+import TeamDetail from "./components/TeamDetail";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
-const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,drepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8,pivoMale:-3,pivoVelke:-5,vino:-6,panak:-8 };
-const AM = [
-  {key:"shyby",    label:"Shyby",      sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
-  {key:"anglicky", label:"Angličáky",  sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},
-  {key:"kliky",    label:"Kliky",      sub:"push-ups", unit:"ks", icon:"▲",color:"#38bdf8"},
-  {key:"drepy",    label:"Dřepy",      sub:"squats",   unit:"ks", icon:"↓",color:"#34d399"},
-  {key:"sedLehy",  label:"Sed-lehy",   sub:"sit-ups",  unit:"ks", icon:"↔",color:"#a3e635"},
-  {key:"behKm",    label:"Běh",        sub:"km",       unit:"km", icon:"▶",color:"#fbbf24"},
-  {key:"koloKm",   label:"Kolo",       sub:"km",       unit:"km", icon:"○",color:"#fb7185"},
-  {key:"plankSec", label:"Plank",      sub:"sekund",   unit:"s",  icon:"—",color:"#e879f9"},
-  {key:"kroky",    label:"Kroky",      sub:"steps",    unit:"kr", icon:"◆",color:"#06b6d4"},
-  {key:"silovy",   label:"Silový tr.", sub:"strength", unit:"min",icon:"◉",color:"#f43f5e"},
-  {key:"plavani",  label:"Plavání",    sub:"swim",     unit:"km", icon:"~",color:"#0ea5e9"},
-  {key:"veslovani",label:"Veslování",  sub:"rowing",   unit:"km", icon:"↑",color:"#8b5cf6"},
-  {key:"kardio",   label:"Kardio",     sub:"cardio",   unit:"min",icon:"♥",color:"#10b981"},
-  {key:"pivoMale", label:"Malé pivo",  sub:"0.3l",     unit:"ks", icon:"🍺",color:"#ef4444",negative:true},
-  {key:"pivoVelke",label:"Velké pivo", sub:"0.5l",     unit:"ks", icon:"🍺",color:"#dc2626",negative:true},
-  {key:"vino",     label:"Víno",       sub:"2dcl",     unit:"ks", icon:"🍷",color:"#b91c1c",negative:true},
-  {key:"panak",    label:"Panák",      sub:"tvrdý",    unit:"ks", icon:"🥃",color:"#991b1b",negative:true},
-];
-
-const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key]}));
-function calcAge(dob){if(!dob)return 30;const b=new Date(dob),t=new Date();let a=t.getFullYear()-b.getFullYear();if(t<new Date(t.getFullYear(),b.getMonth(),b.getDate()))a--;return a;}
-function ageMult(age){const a=parseInt(age)||30;if(a>=30)return 1+(a-30)*0.015;return Math.max(0.85,1-(30-a)*0.005);}
-function calcScore(e,age,pts){
-  if(!e)return 0;
-  const acts=getActs(pts);
-  const positive=acts.filter(a=>!a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0)*ageMult(age);
-  const negative=acts.filter(a=>a.negative).reduce((s,a)=>s+(parseFloat(e[a.key])||0)*a.pts,0);
-  return positive+negative;
-}
-function todayStr(){return new Date().toISOString().split("T")[0];}
-function weekAgoStr(){const d=new Date();d.setDate(d.getDate()-7);return d.toISOString().split("T")[0];}
-function dMinus(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];}
-function calcStreak(days){if(!days||!Object.keys(days).length)return 0;let s=0,c=new Date();if(!days[todayStr()])c.setDate(c.getDate()-1);while(true){const d=c.toISOString().split("T")[0];if(!days[d])break;s++;c.setDate(c.getDate()-1);}return s;}
-function randCode(){return Math.random().toString(36).slice(2,8).toUpperCase();}
-function fmtVal(a,v){if(a.unit==="km")return parseFloat(v).toFixed(1);if(a.unit==="kr")return Math.round(v).toLocaleString();return Math.round(v);}
-function exportCSV(name,days,pts,age){
-  const h=["Datum","Skóre",...AM.map(a=>`${a.label} (${a.unit})`)];
-  const r=Object.entries(days).sort(([a],[b])=>a.localeCompare(b)).map(([d,e])=>[d,calcScore(e,age,pts).toFixed(2),...AM.map(a=>parseFloat(e[a.key])||0)]);
-  const csv=[h,...r].map(x=>x.join(";")).join("\n");
-  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url=URL.createObjectURL(blob);const el=document.createElement("a");el.href=url;el.download=`beatfit_${name}_${todayStr()}.csv`;el.click();URL.revokeObjectURL(url);
-}
-function seasonStatus(s){const t=todayStr();if(t<s.start_date)return"upcoming";if(t>s.end_date)return"finished";return"active";}
-function seasonLabel(s){const st=seasonStatus(s);if(st==="upcoming")return{text:"Připravuje se",cls:"bf-badge-warn"};if(st==="finished")return{text:"Ukončeno",cls:"bf-badge-dim"};return{text:"Probíhá",cls:"bf-badge-success"};}
-function daysLeft(s){return Math.ceil((new Date(s.end_date)-new Date(todayStr()))/(1000*60*60*24));}
-
-const MEDALS=["🥇","🥈","🥉"],RANK_CLR=["#f59e0b","#94a3b8","#b87333"];
 const SK="bf_session"; // { userId, activeWsId, knownWsIds:[] }
 
 export default function App(){
@@ -358,50 +316,7 @@ export default function App(){
     const ec={};for(const e of eR.data||[])ec[e.user_id]=(ec[e.user_id]||0)+1;
     const wMap={};for(const w of wR.data||[])wMap[w.id]={name:w.name,code:w.code};setAllWs(wMap);
     // group users by workspace via workspace_members
-    const wuMap={};
-    for(const m of mR.data||[]){
-      const u=(uR.data||[]).find(x=>x.id===m.user_id);if(!u)continue;
-      if(!wuMap[m.workspace_id])wuMap[m.workspace_id]=[];
-      wuMap[m.workspace_id].push({id:u.id,name:u.name,dob:u.dob,pin:u.pin,entryCount:ec[u.id]||0});
-    }
-    setAllWsU(wuMap);setStep("admin");
-  }
-
-  async function savePts(){
-    setPtsSv(true);const merged={...pts,...ptsEdit};
-    const{error:e}=await supabase.from("settings").upsert({key:"pts",value:merged},{onConflict:"key"});
-    if(e){setErr("Uložení koeficientů selhalo.");setPtsSv(false);return;}
-    setPts(merged);setPtsFlash(true);setTimeout(()=>setPtsFlash(false),2000);setPtsSv(false);
-  }
-
-  async function createAdminWs(){
-    if(!nWsName.trim()||!nWsCode.trim())return;
-    const id="ws"+Date.now();
-    const{error:e}=await supabase.from("workspaces").insert({id,name:nWsName.trim(),code:nWsCode.trim().toUpperCase()});
-    if(e){setErr(e.message.includes("unique")?"Kód již existuje.":"Vytvoření selhalo.");return;}
-    setAllWs(w=>({...w,[id]:{name:nWsName.trim(),code:nWsCode.trim().toUpperCase()}}));setAllWsU(w=>({...w,[id]:[]}));setNWsName("");setNWsCode(randCode());
-  }
-
-  async function updateAdminWs(){
-    if(!editWsN.trim()||!editWsC.trim())return;
-    const{error:e}=await supabase.from("workspaces").update({name:editWsN.trim(),code:editWsC.trim().toUpperCase()}).eq("id",editWs);
-    if(e){setErr(e.message.includes("unique")?"Kód již existuje.":"Uložení selhalo.");return;}
-    setAllWs(w=>({...w,[editWs]:{...w[editWs],name:editWsN.trim(),code:editWsC.trim().toUpperCase()}}));setEditWs(null);
-  }
-
-  async function deleteAdminWs(wsId){
-    if(!window.confirm(`Opravdu smazat skupinu "${allWs[wsId]?.name}" včetně VŠECH dat?`))return;
-    const uIds=(allWsU[wsId]||[]).map(u=>u.id);
-    if(uIds.length>0){await Promise.all([supabase.from("entries").delete().in("user_id",uIds),supabase.from("goals").delete().in("user_id",uIds),supabase.from("team_members").delete().in("user_id",uIds)]);}
-    await Promise.all([supabase.from("workspace_members").delete().eq("workspace_id",wsId),supabase.from("seasons").delete().eq("workspace_id",wsId),supabase.from("teams").delete().eq("workspace_id",wsId)]);
-    await supabase.from("workspaces").delete().eq("id",wsId);
-    setAllWs(w=>{const n={...w};delete n[wsId];return n;});setAllWsU(w=>{const n={...w};delete n[wsId];return n;});if(aSelWs===wsId)setASelWs(null);
-  }
-
-  async function saveAdminUser(){
-    if(!editName.trim()||!editDob)return;
-    const{error:e}=await supabase.from("users").update({name:editName.trim(),dob:editDob}).eq("id",editUser);
-    if(e){setErr("Uložení selhalo.");return;}
+    // Header component extracted to src/components/Header.jsx
     const wsId=Object.keys(allWsU).find(w=>(allWsU[w]||[]).some(u=>u.id===editUser));
     setAllWsU(w=>({...w,[wsId]:(w[wsId]||[]).map(u=>u.id===editUser?{...u,name:editName.trim(),dob:editDob}:u)}));setEditUser(null);
   }
@@ -490,22 +405,7 @@ export default function App(){
 
   // ── styles helpers ────────────────────────────────────────────────────────
   const P={padding:"1rem",maxWidth:480,margin:"0 auto"};
-  const Err=()=>err?(<div className="bf-err-banner"><span>{err}</span><button onClick={()=>setErr(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--bf-danger)",fontSize:18,lineHeight:1,padding:"0 0 0 8px"}}>×</button></div>):null;
-
-  const SFormCard=({onSubmit,onCancel})=>(
-    <div className="bf-card" style={{marginBottom:"1rem"}}>
-      <div className="bf-label" style={{marginBottom:10}}>Nová výzva</div>
-      <input placeholder="Název výzvy" value={sForm.name} onChange={e=>setSForm(f=>({...f,name:e.target.value}))} className="bf-inp" style={{marginBottom:8}}/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-        <div><label className="bf-label">Začátek</label><input type="date" value={sForm.start_date} onChange={e=>setSForm(f=>({...f,start_date:e.target.value}))} className="bf-inp bf-inp-mono"/></div>
-        <div><label className="bf-label">Konec</label><input type="date" value={sForm.end_date} onChange={e=>setSForm(f=>({...f,end_date:e.target.value}))} className="bf-inp bf-inp-mono"/></div>
-      </div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={onSubmit} disabled={!sForm.name.trim()||!sForm.start_date||!sForm.end_date||sSaving} className="bf-btn" style={{flex:1}}>{sSaving?"Vytvářím…":sFlash?"✓ Vytvořeno!":"Vytvořit výzvu →"}</button>
-        <button onClick={onCancel} className="bf-btn-ghost">Zrušit</button>
-      </div>
-    </div>
-  );
+  
 
   if(loading&&step!=="app")return<div style={{...P,textAlign:"center",paddingTop:"3rem",color:"var(--bf-text3)",fontSize:14,fontFamily:"var(--bf-font)"}}>Načítám…</div>;
 
@@ -666,7 +566,7 @@ export default function App(){
   if(step==="admin")return(
     <div style={P}>
       <div className="bf-topbar"><div><div className="bf-label">Panel</div><p style={{margin:0,fontWeight:800,fontSize:17,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Administrátor</p></div><button onClick={()=>{setStep("start");setAdminPwd("");}} className="bf-btn-out">Odhlásit</button></div>
-      <Err/>
+      <Err err={err} setErr={setErr}/>
       <div className="bf-nav" style={{marginBottom:"1.25rem"}}>
         {[["workspaces","Skupiny"],["pts","Koeficienty"],["players","Hráči"]].map(([t,l])=>(<button key={t} onClick={()=>{setAdminTab(t);setEditUser(null);setEditWs(null);setErr(null);}} className={`bf-nav-btn${adminTab===t?" active":""}`}>{l}</button>))}
       </div>
@@ -802,10 +702,10 @@ export default function App(){
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <TopBar/><Nav/><Err/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/><Err err={err} setErr={setErr}/>
         <input type="date" value={logDate} max={todayStr()} onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}} className="bf-inp bf-inp-mono" style={{marginBottom:"1rem",textAlign:"center",fontSize:14}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
-          {[{l:"Skóre",v:score.toFixed(1)},{l:"Věk. koef.",v:`×${ageMult(age).toFixed(2)}`},{l:"Streak",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
+          {[{l:"Skóre",v:score.toFixed(1)},{l:"Věk. koef.",v:`×${ageMult(age).toFixed(2)}`},{l:"Řada",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
             <div key={l} className="bf-stat"><div className="bf-label" style={{marginBottom:4}}>{l}</div><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"var(--bf-mono)",color:c||"var(--bf-text)"}}>{v}</p></div>
           ))}
         </div>
@@ -854,58 +754,9 @@ export default function App(){
     for(const a of AM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <TopBar/><Nav/><Err/>
-        {lbMode==="global"?(
-          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:"1rem"}}>
-            <div className="bf-chips" style={{flex:1,marginBottom:0}}>
-              {[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`bf-chip${period===k?" active":""}`}>{l}</button>))}
-            </div>
-            <button onClick={()=>loadWsData(activeWsId,uid)} style={{flexShrink:0,padding:"8px 12px",background:"var(--bf-surface2)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",cursor:"pointer",fontSize:16,lineHeight:1}} title="Obnovit">↻</button>
-          </div>
-        ):(
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem",padding:"10px 14px",background:"var(--bf-surface2)",borderRadius:"var(--bf-r-md)",border:"1.5px solid var(--bf-border)"}}>
-            <button onClick={()=>setLbMode("global")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
-            <div style={{flex:1}}><p style={{margin:0,fontSize:14,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{actS?.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{actS?.start_date} → {actS?.end_date}</p></div>
-            {actS&&<span className={`bf-badge ${seasonLabel(actS).cls}`}>{seasonLabel(actS).text}</span>}
-          </div>
-        )}
-        {lbMode==="global"&&globalSeasons.length>0&&<div style={{marginBottom:"1.25rem"}}>
-          <div className="bf-label" style={{marginBottom:8}}>Výzvy</div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {globalSeasons.sort(([,a],[,b])=>b.start_date.localeCompare(a.start_date)).map(([sid,s])=>{
-              const lbl=seasonLabel(s),dl=daysLeft(s),st=seasonStatus(s);
-              return(<button key={sid} onClick={()=>setLbMode(`season:${sid}`)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)",cursor:"pointer",width:"100%",textAlign:"left"}}>
-                <div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><span className={`bf-badge ${lbl.cls}`}>{lbl.text}</span>{st==="active"&&dl>=0&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>zbývá {dl} dní</span>}</div><p style={{margin:0,fontSize:14,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{s.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{s.start_date} → {s.end_date}</p></div>
-                <span style={{fontSize:18,color:"var(--bf-text3)"}}>›</span>
-              </button>);
-            })}
-          </div>
-        </div>}
-        {myRank>0&&<div className="bf-surface-accent" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)",fontWeight:600}}>Tvoje pořadí</span><span style={{fontSize:26,fontWeight:800,fontFamily:"var(--bf-mono)",color:"var(--bf-accent)"}}>#{myRank}</span><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)"}}>z {sorted.length} hráčů</span></div>}
-        <div className="bf-label" style={{marginBottom:8}}>Celkové pořadí</div>
-        <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:"1.5rem"}}>
-          {sorted.length===0&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zatím žádná data.</p>}
-          {sorted.map(([id,d],i)=>{const streak=calcStreak(entries[id]||{});return(
-            <div key={id} className={`bf-lb-row${id===uid?" me":""}`}>
-              <span style={{fontSize:17,minWidth:30,color:RANK_CLR[i]||"var(--bf-text3)",fontWeight:800,fontFamily:"var(--bf-mono)"}}>{MEDALS[i]||`${i+1}.`}</span>
-              <div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div>
-              <span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span>
-              {streak>=3&&<span className="bf-badge bf-badge-accent" style={{fontSize:10}}>{streak}🔥</span>}
-              <span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span>
-              <span style={{fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>b</span>
-            </div>
-          );})}
-        </div>
-        <div className="bf-label" style={{marginBottom:8}}>Vítězové disciplín</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-          {AM.filter(a=>actW[a.key]).sort((a,b)=>actW[b.key].val-actW[a.key].val).map(a=>(
-            <div key={a.key} className="bf-card" style={{padding:"10px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><div className="bf-act-icon" style={{width:26,height:26,borderRadius:6,fontSize:11,background:a.color+"20",color:a.color}}>{a.icon}</div><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.label}</span></div>
-              <p style={{margin:"0 0 2px",fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{actW[a.key].name}</p>
-              <p style={{margin:0,fontSize:12,color:"var(--bf-text2)",fontFamily:"var(--bf-mono)",fontWeight:500}}>{fmtVal(a,actW[a.key].val)} {a.unit}</p>
-            </div>
-          ))}
-        </div>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+        <Err err={err} setErr={setErr}/>
+        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} />
       </div>
     );
   }
@@ -914,71 +765,62 @@ export default function App(){
   if(view==="teams"){
     if(teamView==="list")return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <TopBar/><Nav/><Err/>
-        <div className="bf-section-header" style={{marginBottom:"1rem"}}><div className="bf-label" style={{margin:0}}>Moje týmy</div><button onClick={()=>setTeamView("create")} className="bf-btn-sm">+ Nový tým</button></div>
-        {!myTeamIds.length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zatím nejsi v žádném týmu.</p>}
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {myTeamIds.map(tid=>{const t=teams[tid];if(!t)return null;const mc=(members[tid]||[]).length,tsc=Object.values(seasons).filter(s=>s.team_id===tid).length;return(
-            <button key={tid} onClick={()=>{setActiveTeam(tid);setTeamView("detail");setTTab("score");setTSeason("all");setShowTSF(false);}} className="bf-team-card">
-              <div className="bf-team-icon">{t.name[0]}</div>
-              <div style={{flex:1}}><p style={{margin:0,fontSize:15,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{t.name}</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{mc} {mc===1?"člen":"členů"}{tsc>0?` · ${tsc} výzev`:""}{t.created_by===uid?" · tvůj":""}</p></div>
-              <span style={{fontSize:18,color:"var(--bf-text3)"}}>›</span>
-            </button>
-          );})}
-        </div>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+        <Err err={err} setErr={setErr}/>
+        <TeamsList myTeamIds={myTeamIds} teams={teams} members={members} seasons={seasons} uid={uid} setActiveTeam={setActiveTeam} setTeamView={setTeamView} setTTab={setTTab} setTSeason={setTSeason} setShowTSF={setShowTSF} />
       </div>
     );
     if(teamView==="create")return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <TopBar/><Nav/><Err/>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.5rem"}}><button onClick={()=>setTeamView("list")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button><div className="bf-label" style={{margin:0}}>Nový tým</div></div>
-        <div className="bf-card"><input placeholder="Název týmu" value={newTName} onChange={e=>setNewTName(e.target.value)} className="bf-inp" style={{marginBottom:12}} onKeyDown={e=>e.key==="Enter"&&createTeam()}/><button onClick={createTeam} disabled={!newTName.trim()||saving} className="bf-btn">{saving?"Vytvářím…":"Vytvořit tým →"}</button></div>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+        <Err err={err} setErr={setErr}/>
+        <TeamCreate newTName={newTName} setNewTName={setNewTName} createTeam={createTeam} saving={saving} setTeamView={setTeamView} />
       </div>
     );
     if(teamView==="detail"&&activeTeam){
-      const team=teams[activeTeam];if(!team){setTeamView("list");return null;}
-      const tSList=Object.entries(seasons).filter(([,s])=>s.team_id===activeTeam);
-      const actS=tSeason.startsWith("season:")?seasons[tSeason.slice(7)]:null;
-      const tMids=members[activeTeam]||[];
-      const lb=(()=>{const t2=todayStr(),w2=weekAgoStr(),res={};
-        for(const id of tMids){const u=wsUsers[id];if(!u)continue;const days=entries[id]||{};let sc2=0;const acts={};for(const a of AM)acts[a.key]=0;
-          for(const[date,e] of Object.entries(days)){if(actS){if(date<actS.start_date||date>actS.end_date)continue;}else{if(tPeriod==="today"&&date!==t2)continue;if(tPeriod==="week"&&date<w2)continue;}
-          sc2+=calcScore(e,calcAge(u.dob),pts);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;}res[id]={sc:sc2,name:u.name,dob:u.dob,acts};}return res;})();
-      const sorted=Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc),myRank=sorted.findIndex(([id])=>id===uid)+1;
-      const activeWsObj=knownWs.find(w=>w.id===activeWsId);
-      const invUrl=`${window.location.origin}${window.location.pathname}?invite=${team.invite_code}&ws=${activeWsObj?.code||""}`;
-      return(
+      return (
         <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-          <TopBar/><Nav/><Err/>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem"}}><button onClick={()=>setTeamView("list")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button><div style={{flex:1}}><p style={{margin:0,fontSize:16,fontWeight:800,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{team.name}</p><p style={{margin:0,fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{tMids.length} členů</p></div><button onClick={()=>leaveTeam(activeTeam)} className="bf-btn-danger" style={{padding:"6px 12px",fontSize:12}}>Opustit</button></div>
-          <div className="bf-card" style={{marginBottom:"1rem"}}><div className="bf-label" style={{marginBottom:8}}>Pozvánka</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input readOnly value={invUrl} className="bf-inp bf-inp-mono" style={{flex:1,fontSize:10,cursor:"text"}}/><button onClick={()=>navigator.clipboard.writeText(invUrl)} className="bf-btn-sm">Kopírovat</button></div></div>
-          <div style={{marginBottom:"1rem"}}>
-            <div className="bf-section-header" style={{marginBottom:8}}><div className="bf-label" style={{margin:0}}>Výzvy týmu</div>{!showTSF&&<button onClick={()=>{setShowTSF(true);setSForm({name:"",start_date:"",end_date:""});}} className="bf-btn-sm">+ Výzva</button>}</div>
-            {showTSF&&<SFormCard onSubmit={()=>createSeason(activeTeam)} onCancel={()=>setShowTSF(false)}/>}
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              <button onClick={()=>setTSeason("all")} className={`bf-chip${tSeason==="all"?" active":""}`} style={{flex:"none",padding:"6px 14px",fontSize:11}}>Bez výzvy</button>
-              {tSList.sort(([,a],[,b])=>b.start_date.localeCompare(a.start_date)).map(([sid,s])=>{const lbl=seasonLabel(s);return<button key={sid} onClick={()=>setTSeason(`season:${sid}`)} className={`bf-chip${tSeason===`season:${sid}`?" active":""}`} style={{flex:"none",padding:"6px 14px",fontSize:11,display:"flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:"currentColor",flexShrink:0,display:"inline-block",opacity:0.7}}/>{s.name}</button>;})}
-            </div>
-            {actS&&tMids.includes(uid)&&actS.created_by===uid&&<button onClick={()=>{deleteSeason(tSeason.slice(7));setTSeason("all");}} className="bf-btn-danger" style={{marginTop:8,padding:"5px 12px",fontSize:11}}>Smazat výzvu</button>}
-          </div>
-          {tSeason==="all"&&<div className="bf-chips">{[["today","Dnes"],["week","Týden"],["all","Vše"]].map(([k,l])=>(<button key={k} onClick={()=>setTPeriod(k)} className={`bf-chip${tPeriod===k?" active":""}`}>{l}</button>))}</div>}
-          {actS&&<div className="bf-surface" style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:10}}><span className={`bf-badge ${seasonLabel(actS).cls}`}>{seasonLabel(actS).text}</span><div style={{flex:1}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{actS.name}</p><p style={{margin:0,fontSize:11,fontFamily:"var(--bf-mono)",color:"var(--bf-text3)"}}>{actS.start_date} → {actS.end_date}</p></div>{seasonStatus(actS)==="active"&&<span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>zbývá {daysLeft(actS)} dní</span>}</div>}
-          {myRank>0&&<div className="bf-surface-accent" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)",fontWeight:600}}>Tvoje pořadí</span><span style={{fontSize:26,fontWeight:800,fontFamily:"var(--bf-mono)",color:"var(--bf-accent)"}}>#{myRank}</span><span style={{fontSize:12,color:"var(--bf-accent-text)",fontFamily:"var(--bf-font)"}}>z {sorted.length}</span></div>}
-          <div className="bf-nav" style={{marginBottom:"1rem"}}>{[["score","Body"],["activity","Aktivity"]].map(([t,l])=>(<button key={t} onClick={()=>setTTab(t)} className={`bf-nav-btn${tTab===t?" active":""}`}>{l}</button>))}</div>
-          {tTab==="score"&&<><div className="bf-label" style={{marginBottom:8}}>Žebříček</div><div style={{display:"flex",flexDirection:"column",gap:5}}>
-            {sorted.length===0&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Zatím žádná data.</p>}
-            {sorted.map(([id,d],i)=>(<div key={id} className={`bf-lb-row${id===uid?" me":""}`}><span style={{fontSize:17,minWidth:30,color:RANK_CLR[i]||"var(--bf-text3)",fontWeight:800,fontFamily:"var(--bf-mono)"}}>{MEDALS[i]||`${i+1}.`}</span><div className="bf-av" style={{width:28,height:28,fontSize:11}}>{d.name[0]}</div><span style={{flex:1,fontWeight:700,fontSize:14,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{d.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{d.sc.toFixed(1)}</span><span style={{fontSize:10,color:"var(--bf-text3)"}}>b</span></div>))}
-          </div></>}
-          {tTab==="activity"&&<><div className="bf-label" style={{marginBottom:8}}>Porovnání aktivit</div>
-            {AM.map(a=>{const vals=sorted.map(([id,d])=>({name:d.name,val:d.acts[a.key]||0,isMe:id===uid})).sort((x,y)=>y.val-x.val);const mx=Math.max(...vals.map(v=>v.val),1);if(vals.every(v=>v.val===0))return null;return(
-              <div key={a.key} className="bf-card" style={{marginBottom:"0.75rem"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div className="bf-act-icon" style={{width:30,height:30,borderRadius:7,fontSize:12,background:a.color+"20",color:a.color}}>{a.icon}</div><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p></div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {vals.filter(v=>v.val>0).map((v,i)=>(<div key={v.name}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,fontWeight:v.isMe?700:500,color:v.isMe?"var(--bf-text)":"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>{i===0?"🥇 ":""}{v.name}</span><span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text)",fontWeight:600}}>{fmtVal(a,v.val)} {a.unit}</span></div><div className="bf-progress-bar"><div className="bf-progress-fill" style={{width:`${(v.val/mx)*100}%`,background:v.isMe?a.color:"var(--bf-surface3)",opacity:v.isMe?1:0.6}}/></div></div>))}
-                </div>
-              </div>
-            );})}
-          </>}
+          <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/>
+          <Err err={err} setErr={setErr}/>
+          <TeamDetail
+            activeTeam={activeTeam}
+            teams={teams}
+            seasons={seasons}
+            tSeason={tSeason}
+            setTSeason={setTSeason}
+            members={members}
+            todayStr={todayStr}
+            weekAgoStr={weekAgoStr}
+            entries={entries}
+            wsUsers={wsUsers}
+            AM={AM}
+            calcScore={calcScore}
+            calcAge={calcAge}
+            pts={pts}
+            uid={uid}
+            knownWs={knownWs}
+            activeWsId={activeWsId}
+            setTeamView={setTeamView}
+            leaveTeam={leaveTeam}
+            showTSF={showTSF}
+            setShowTSF={setShowTSF}
+            setSForm={setSForm}
+            sForm={sForm}
+            sSaving={sSaving}
+            sFlash={sFlash}
+            createSeason={createSeason}
+            deleteSeason={deleteSeason}
+            seasonLabel={seasonLabel}
+            seasonStatus={seasonStatus}
+            daysLeft={daysLeft}
+            setTTab={setTTab}
+            tTab={tTab}
+            setTPeriod={setTPeriod}
+            tPeriod={tPeriod}
+            MEDALS={MEDALS}
+            RANK_CLR={RANK_CLR}
+            fmtVal={fmtVal}
+          />
         </div>
       );
     }
@@ -998,7 +840,7 @@ export default function App(){
     const maxSc=Math.max(...cScores,1);
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
-        <TopBar/><Nav/><Err/>
+        <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView}/><Err err={err} setErr={setErr}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Celkem bodů",v:total.toFixed(0)},{l:"Aktivní dny",v:dates.length},{l:"Streak",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
             <div key={l} className="bf-stat"><div className="bf-label" style={{marginBottom:4}}>{l}</div><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"var(--bf-mono)",color:c||"var(--bf-text)"}}>{v}</p></div>
