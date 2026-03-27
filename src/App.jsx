@@ -140,18 +140,18 @@ export default function App(){
     const params=new URLSearchParams(window.location.search);
     const inv=params.get("invite"),wsCode=params.get("ws");
     if(inv){setPendInv(inv);}
-    if(wsCode){setAddWsCode(wsCode);}
+    if(wsCode){setAddWsCode(wsCode);setAddWsMode("code");}
     window.history.replaceState({},"",window.location.pathname);
 
     const sess=JSON.parse(localStorage.getItem(SK)||"null");
     if(sess?.userId&&sess?.activeWsId){
-      restoreSession(sess).then(ok=>{
+      restoreSession(sess, inv).then(ok=>{
         if(!ok){localStorage.removeItem(SK);setLoading(false);}
       });
     } else setLoading(false);
   },[]);
 
-  async function restoreSession(sess){
+  async function restoreSession(sess, inv){
     try{
       const{data:u,error:ue}=await supabase.from("users").select("*").eq("id",sess.userId).single();
       if(ue||!u)return false;
@@ -164,7 +164,7 @@ export default function App(){
       setActiveWsId(activeWs.id);
       await loadWsData(activeWs.id,sess.userId);
       // handle pending invite
-      if(pendInv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",activeWs.id);const tf=td?.find(t=>t.invite_code===pendInv);if(tf)setInvInfo({teamId:tf.id,teamName:tf.name});}
+      if(inv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",activeWs.id);const tf=td?.find(t=>t.invite_code===inv);if(tf){setPendInv(inv);setInvInfo({teamId:tf.id,teamName:tf.name});}}
       setStep("app");return true;
     }catch{return false;}
   }
@@ -240,35 +240,37 @@ export default function App(){
       setStep("app");return;
     }
 
-    // load prefs when context/user changes
-    useEffect(()=>{
-      if(!uid) return;
-      loadPrefsFromDb();
-    },[uid, activeWsId, activeTeam]);
-
-    // debounce prefs -> localStorage + DB upsert
-    useEffect(()=>{
-      if(!uid) return;
-      if(skipSaveRef.current){ skipSaveRef.current = false; return; }
-      try{ localStorage.setItem('bf_prefs', JSON.stringify(prefs)); }catch(e){}
-      if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(()=>{ upsertPrefsToDb(prefs); }, 700);
-      return ()=>{ if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-    },[prefs, uid, activeWsId, activeTeam]);
-
-    // refresh form when entries change or logDate changes
-    useEffect(()=>{
-      if(!uid || !logDate) return;
-      setForm(entries[uid]?.[logDate]||{});
-    },[entries, uid, logDate]);
     await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
     setKnownWs(w=>[...w,data]);
     setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
     setActiveWsId(data.id);
     await loadWsData(data.id,uid);
+    if(pendInv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",data.id);const tf=td?.find(t=>t.invite_code===pendInv);if(tf)setInvInfo({teamId:tf.id,teamName:tf.name});}
     localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:data.id}));
     setStep("app");
   }
+
+  // load prefs when context/user changes
+  useEffect(()=>{
+    if(!uid) return;
+    loadPrefsFromDb();
+  },[uid, activeWsId, activeTeam]);
+
+  // debounce prefs -> localStorage + DB upsert
+  useEffect(()=>{
+    if(!uid) return;
+    if(skipSaveRef.current){ skipSaveRef.current = false; return; }
+    try{ localStorage.setItem('bf_prefs', JSON.stringify(prefs)); }catch(e){}
+    if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(()=>{ upsertPrefsToDb(prefs); }, 700);
+    return ()=>{ if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+  },[prefs, uid, activeWsId, activeTeam]);
+
+  // refresh form when entries change or logDate changes
+  useEffect(()=>{
+    if(!uid || !logDate) return;
+    setForm(entries[uid]?.[logDate]||{});
+  },[entries, uid, logDate]);
 
   async function addWsNew(){
     if(!addWsName.trim())return;
@@ -302,6 +304,7 @@ export default function App(){
       const activeWs=wsList[0];
       setActiveWsId(activeWs.id);
       await loadWsData(activeWs.id,data.id);
+      if(pendInv){const{data:td}=await supabase.from("teams").select("*").eq("workspace_id",activeWs.id);const tf=td?.find(t=>t.invite_code===pendInv);if(tf)setInvInfo({teamId:tf.id,teamName:tf.name});}
       localStorage.setItem(SK,JSON.stringify({userId:data.id,activeWsId:activeWs.id}));
       setAuthLoad(false);setStep("app");
     }
@@ -779,6 +782,11 @@ export default function App(){
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/><Err err={err} setErr={setErr}/>
+        {invInfo&&<div className="bf-card" style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:12,padding:"14px 16px",border:"1.5px solid var(--bf-accent)"}}>
+          <div style={{flex:1}}><p style={{margin:0,fontSize:14,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>Pozvánka do týmu</p><p style={{margin:"2px 0 0",fontSize:12,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{invInfo.teamName}</p></div>
+          <button onClick={()=>joinByCode(pendInv)} className="bf-btn" style={{width:"auto",padding:"8px 14px",flexShrink:0,fontSize:13}}>Přijmout</button>
+          <button onClick={()=>{setPendInv(null);setInvInfo(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",fontSize:20,padding:"0 0 0 4px",lineHeight:1}}>×</button>
+        </div>}
         {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />}
         <input type="date" value={logDate} max={todayStr()} onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}} className="bf-inp bf-inp-mono" style={{marginBottom:"1rem",textAlign:"center",fontSize:14}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
