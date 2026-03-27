@@ -254,6 +254,12 @@ export default function App(){
       saveTimeoutRef.current = setTimeout(()=>{ upsertPrefsToDb(prefs); }, 700);
       return ()=>{ if(saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
     },[prefs, uid, activeWsId, activeTeam]);
+
+    // refresh form when entries change or logDate changes
+    useEffect(()=>{
+      if(!uid || !logDate) return;
+      setForm(entries[uid]?.[logDate]||{});
+    },[entries, uid, logDate]);
     await supabase.from("workspace_members").insert({workspace_id:data.id,user_id:uid});
     setKnownWs(w=>[...w,data]);
     setAddWsCode("");setAddWsMode(null);setAddWsLoad(false);
