@@ -207,8 +207,9 @@ export default function App(){
       const tIds=Object.keys(tMap),mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
       if(stR.data?.length>0)setPts({...DEFAULT_PTS,...stR.data[0].value});
-      setForm(eMap[userId]?.[logDate]||{});
-      setGoalIn(gMap[userId]||"");
+      const actualUserId = userId || uid;
+      setForm(eMap[actualUserId]?.[logDate]||{});
+      setGoalIn(gMap[actualUserId]||"");
     }catch(e){setErr("Nepodařilo se načíst data skupiny.");}
     setLoading(false);
   }
