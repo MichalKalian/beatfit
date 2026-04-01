@@ -34,6 +34,7 @@ export function calcScore(e,age,pts,actKeys=null){
 }
 export function todayStr(){return new Date().toISOString().split("T")[0];}
 export function weekAgoStr(){const d=new Date();d.setDate(d.getDate()-7);return d.toISOString().split("T")[0];}
+export function weekStartStr(){const d=new Date();const day=d.getDay();const diff=day===0?6:day-1;d.setDate(d.getDate()-diff);return d.toISOString().split("T")[0];}
 export function dMinus(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];}
 export function calcStreak(days){if(!days||!Object.keys(days).length)return 0;let s=0,c=new Date();if(!days[todayStr()])c.setDate(c.getDate()-1);while(true){const d=c.toISOString().split("T")[0];if(!days[d])break;s++;c.setDate(c.getDate()-1);}return s;}
 export function randCode(){return Math.random().toString(36).slice(2,8).toUpperCase();}

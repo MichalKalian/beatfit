@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./beatfit.css";
-import { DEFAULT_PTS, AM, getActs, calcAge, ageMult, calcScore, todayStr, weekAgoStr, dMinus, calcStreak, randCode, fmtVal, exportCSV, seasonStatus, seasonLabel, daysLeft, MEDALS, RANK_CLR } from "./lib/helpers";
+import { DEFAULT_PTS, AM, getActs, calcAge, ageMult, calcScore, todayStr, weekAgoStr, weekStartStr, dMinus, calcStreak, randCode, fmtVal, exportCSV, seasonStatus, seasonLabel, daysLeft, MEDALS, RANK_CLR } from "./lib/helpers";
 import { computeEffectiveCap } from "./lib/helpers";
 import { Err, SFormCard } from "./components/Misc";
 import Header from "./components/Header";
@@ -777,7 +777,7 @@ export default function App(){
     const age=calcAge(userMeta?.dob),score=calcScore(form,age,pts),streak=calcStreak(entries[uid]||{});
     const weekGoal=parseFloat(goals[uid])||0;
     const selectedActsForWs = (prefs.selectedActs&&prefs.selectedActs.ws&&prefs.selectedActs.ws.length)?prefs.selectedActs.ws:null;
-    const weekScore=Object.entries(entries[uid]||{}).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts,selectedActsForWs),0);
+    const weekScore=Object.entries(entries[uid]||{}).filter(([d])=>d>=weekStartStr()).reduce((s,[,e])=>s+calcScore(e,age,pts,selectedActsForWs),0);
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
@@ -922,7 +922,7 @@ export default function App(){
     const myDays=entries[uid]||{},dates=Object.keys(myDays).sort().reverse();
     const age=calcAge(userMeta?.dob),total=dates.reduce((s,d)=>s+calcScore(myDays[d],age,pts),0);
     const streak=calcStreak(myDays),weekGoal=parseFloat(goals[uid])||0;
-    const weekScore=Object.entries(myDays).filter(([d])=>d>=weekAgoStr()).reduce((s,[,e])=>s+calcScore(e,age,pts),0);
+    const weekScore=Object.entries(myDays).filter(([d])=>d>=weekStartStr()).reduce((s,[,e])=>s+calcScore(e,age,pts),0);
     const goalPct=weekGoal>0?Math.min(100,(weekScore/weekGoal)*100):0;
     const totals={};for(const a of AM)totals[a.key]=0;
     for(const e of Object.values(myDays))for(const a of AM)totals[a.key]+=(parseFloat(e[a.key])||0);
