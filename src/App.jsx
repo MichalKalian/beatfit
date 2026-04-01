@@ -456,7 +456,7 @@ export default function App(){
   }
 
   function buildLB(filterIds,fromDate,toDate,opts={}){
-    const t=todayStr(),w=weekAgoStr(),res={};
+    const t=todayStr(),res={};
     const spanInfo = opts.spanInfo || (fromDate&&toDate?{fromDate,toDate}:{period: period});
     for(const[id,days] of Object.entries(entries)){
       if(filterIds&&!filterIds.includes(id))continue;
@@ -467,7 +467,7 @@ export default function App(){
       for(const a of AM)acts[a.key]=0;
       for(const[date,e] of Object.entries(days)){
         if(fromDate&&toDate){if(date<fromDate||date>toDate)continue;}
-        else{if(period==="today"&&date!==t)continue;if(period==="week"&&date<w)continue;}
+        else{if(period==="today"&&date!==t)continue;if(period==="week"&&date<weekStartStr())continue;}
         sc+=calcScore(e,calcAge(u.dob),pts,visibleActKeys);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;
       }
       // apply viewer limit cap if provided
