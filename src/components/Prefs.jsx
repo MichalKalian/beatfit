@@ -28,7 +28,18 @@ export default function Prefs({prefs,setPrefs,activeWsId,activeTeam,AM,onClose,o
             </div>
           </div>
 
-          <section style={{marginTop:10,marginBottom:14}}>
+          <section style={{marginTop:10,marginBottom:18}}>
+            <div style={{marginBottom:8,fontWeight:700}}>Motiv</div>
+            <div style={{display:'flex',gap:8}}>
+              {[['system','Systém'],['light','Světlý'],['dark','Tmavý']].map(([val,label])=>(
+                <button key={val} onClick={()=>setTheme(val)} className={`act-chip${theme===val?' active':''}`} style={{flex:1,justifyContent:'center',fontSize:14,fontWeight:600}}>
+                  {val==='system'?'⚙ ':val==='light'?'☀ ':'🌙 '}{label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section style={{marginTop:0,marginBottom:14}}>
             <div style={{marginBottom:8,fontWeight:700}}>Limity bodů (zobrazit ostatním maximálně)</div>
             <div style={{display:'flex',alignItems:'center',gap:12}}>
               <button onClick={()=>update({limit:{...prefs.limit,enabled:!prefs.limit.enabled}})} aria-pressed={prefs.limit.enabled} className={`act-chip${prefs.limit.enabled?" active":""}`} style={{display:'flex',alignItems:'center',gap:10,fontSize:14}}>
