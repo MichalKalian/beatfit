@@ -925,12 +925,43 @@ export default function App(){
     const actW={};
     const visibleAM=selectedActsForWs?AM.filter(a=>selectedActsForWs.includes(a.key)):AM;
     for(const a of visibleAM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
+    const lbChartColors=['#f59e0b','#60a5fa','#34d399','#f472b6','#a78bfa','#fb923c','#22d3ee','#4ade80'];
+    const lbChartData=(()=>{
+      let allDates=[];
+      if(actS){
+        const cur=new Date(actS.start_date);const endStr=actS.end_date<todayStr()?actS.end_date:todayStr();const end=new Date(endStr);
+        while(cur<=end){allDates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
+      } else if(period==='today'){
+        allDates=[todayStr()];
+      } else if(period==='week'){
+        for(let i=6;i>=0;i--)allDates.push(dMinus(i));
+      } else {
+        const s=new Set();for(const[,days] of Object.entries(entries))for(const d of Object.keys(days))s.add(d);allDates=Array.from(s).sort();
+      }
+      let dateGroups=allDates,aggregated=false;
+      if(allDates.length>28){
+        const wm={};
+        for(const d of allDates){const dt=new Date(d);const day=dt.getDay();const diff=day===0?6:day-1;dt.setDate(dt.getDate()-diff);const wk=dt.toISOString().split('T')[0];if(!wm[wk])wm[wk]=[];wm[wk].push(d);}
+        dateGroups=Object.keys(wm).sort();aggregated=true;
+      }
+      const players=sorted.slice(0,8).map(([id,d],idx)=>{
+        const userDays=entries[id]||{};let cum=0;
+        const points=dateGroups.map(grp=>{
+          let sc=0;
+          if(aggregated){const dt=new Date(grp);for(let i=0;i<7;i++){const dd=dt.toISOString().split('T')[0];if(allDates.includes(dd)){const e=userDays[dd];if(e)sc+=calcScore(e,calcAge(d.dob),pts,selectedActsForWs);}dt.setDate(dt.getDate()+1);}
+          } else {const e=userDays[grp];if(e)sc=calcScore(e,calcAge(d.dob),pts,selectedActsForWs);}
+          cum+=sc;return cum;
+        });
+        return{id,name:d.name,color:lbChartColors[idx%lbChartColors.length],points};
+      });
+      return{dateGroups,aggregated,players};
+    })();
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
         {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
         <Err err={err} setErr={setErr}/>
-        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} />
+        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} lbChartData={lbChartData} />
       </div>
     );
   }
