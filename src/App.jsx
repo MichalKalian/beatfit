@@ -479,7 +479,7 @@ export default function App(){
       for(const[date,e] of Object.entries(days)){
         if(fromDate&&toDate){if(date<fromDate||date>toDate)continue;}
         else{if(period==="today"&&date!==t)continue;if(period==="week"&&date<weekStartStr())continue;}
-        sc+=calcScore(e,calcAge(u.dob),pts,visibleActKeys);for(const a of AM)acts[a.key]+=parseFloat(e[a.key])||0;
+        sc+=calcScore(e,calcAge(u.dob),pts,visibleActKeys);for(const a of AM){if(visibleActKeys&&!visibleActKeys.includes(a.key))continue;acts[a.key]+=parseFloat(e[a.key])||0;}
       }
       // apply viewer limit cap if provided
       if(opts.limit?.enabled){
@@ -852,7 +852,8 @@ export default function App(){
     const sorted=Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc);
     const myRank=sorted.findIndex(([id])=>id===uid)+1;
     const actW={};
-    for(const a of AM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
+    const visibleAM=selectedActsForWs?AM.filter(a=>selectedActsForWs.includes(a.key)):AM;
+    for(const a of visibleAM){let best=null,bestV=-1;for(const[,d] of Object.entries(lb))if((d.acts[a.key]||0)>bestV){bestV=d.acts[a.key];best=d.name;}if(bestV>0)actW[a.key]={name:best,val:bestV};}
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
