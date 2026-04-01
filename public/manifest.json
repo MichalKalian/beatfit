@@ -1,7 +1,7 @@
 {
   "name": "Beatfit",
   "short_name": "Beatfit",
-  "description": "Firemní sportovní soutěž — zaznamenávej sporty, porovnávej výsledky",
+  "description": "Sportovní soutěž — zaznamenávej sporty, porovnávej výsledky",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

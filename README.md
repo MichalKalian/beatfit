@@ -134,7 +134,7 @@ Environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`, `VITE_ADMIN_PAS
 
 - [ ] Google / Apple login (Supabase Auth)
 - [ ] Push notifications / email reminders
-- [ ] Row Level Security (Supabase RLS)
+- [X] Row Level Security (Supabase RLS)
 - [ ] Team admin role (per-workspace)
 - [ ] Season archive with winners
 
