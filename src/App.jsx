@@ -58,6 +58,7 @@ export default function App(){
   const[form,setForm]           = useState({});
   const[goalIn,setGoalIn]       = useState("");
   const[goalFlash,setGoalFlash] = useState(false);
+  const[prFlash,setPrFlash]     = useState([]); // activity keys that just got a new PR
   const[renameWs,setRenameWs]   = useState(false);
   const[renameVal,setRenameVal] = useState("");
   const[wsActsEdit,setWsActsEdit]     = useState(null);
@@ -351,6 +352,16 @@ export default function App(){
     const t=logDate||todayStr();
     const{error:e}=await supabase.from("entries").upsert({user_id:uid,date:t,data:form},{onConflict:"user_id,date"});
     if(e){setErr("Uložení se nezdařilo.");setSaving(false);return;}
+    // detect personal records (compare against all other days, positive activities only)
+    const prevDays=Object.entries(entries[uid]||{}).filter(([d])=>d!==t);
+    const newPRs=AM.filter(a=>!a.negative).reduce((acc,a)=>{
+      const val=parseFloat(form[a.key])||0;
+      if(val<=0)return acc;
+      const prevBest=prevDays.reduce((mx,[,ev])=>Math.max(mx,parseFloat(ev[a.key])||0),0);
+      if(val>prevBest)acc.push(a.key);
+      return acc;
+    },[]);
+    if(newPRs.length){setPrFlash(newPRs);setTimeout(()=>setPrFlash([]),4000);}
     setEntries(p=>({...p,[uid]:{...(p[uid]||{}),[t]:form}}));
     setFlash(true);setTimeout(()=>setFlash(false),2000);setSaving(false);
   }
@@ -824,6 +835,9 @@ export default function App(){
           <button onClick={saveEntry} disabled={saving} className="bf-btn" style={{flex:1}}>{saving?"Ukládám…":flash?"✓ Uloženo!":"Uložit výkon"}</button>
           {entries[uid]?.[logDate]&&<button onClick={deleteEntry} disabled={saving} className="bf-btn-danger">Smazat</button>}
         </div>
+        {prFlash.length>0&&<div style={{marginTop:"0.75rem",padding:"10px 14px",background:"var(--bf-success-dim)",border:"1.5px solid var(--bf-success)",borderRadius:"var(--bf-r-md)",fontSize:12,color:"var(--bf-success)",fontFamily:"var(--bf-font)",fontWeight:600}}>
+          🏆 Nový osobní rekord: {prFlash.map(k=>AM.find(a=>a.key===k)?.label).join(", ")}!
+        </div>}
         {Object.keys(pts).some(k=>pts[k]!==DEFAULT_PTS[k])&&<div style={{marginTop:"0.75rem",padding:"10px 14px",background:"var(--bf-warn-dim)",border:"1.5px solid var(--bf-warn)",borderRadius:"var(--bf-r-md)",fontSize:12,color:"var(--bf-warn)",fontFamily:"var(--bf-font)",fontWeight:500}}>Koeficienty byly upraveny administrátorem.</div>}
       </div>
     );
@@ -975,6 +989,27 @@ export default function App(){
           <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}><span style={{fontSize:9,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)"}}>{cDays[0].slice(5)}</span><span style={{fontSize:9,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)"}}>dnes</span></div>
         </div>
 
+        {(()=>{
+          const prs=AM.filter(a=>!a.negative).reduce((acc,a)=>{
+            let best=0,bestDate=null;
+            for(const[d,e] of Object.entries(myDays)){const v=parseFloat(e[a.key])||0;if(v>best){best=v;bestDate=d;}}
+            if(best>0)acc.push({...a,best,bestDate});
+            return acc;
+          },[]);
+          if(!prs.length)return null;
+          return(<>
+            <div className="bf-label" style={{marginBottom:8}}>Osobní rekordy</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:"1.25rem"}}>
+              {prs.map(a=>(
+                <div key={a.key} className="bf-card" style={{padding:"10px 14px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><div className="bf-act-icon" style={{width:24,height:24,borderRadius:6,fontSize:10,background:a.color+"20",color:a.color}}>{a.icon}</div><span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.label}</span></div>
+                  <p style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"var(--bf-mono)",color:"var(--bf-text)"}}>{fmtVal(a,a.best)}<span style={{fontSize:11,fontWeight:500,color:"var(--bf-text3)",marginLeft:3}}>{a.unit}</span></p>
+                  <p style={{margin:"3px 0 0",fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-mono)"}}>{a.bestDate}</p>
+                </div>
+              ))}
+            </div>
+          </>);
+        })()}
         <div className="bf-label" style={{marginBottom:8}}>Celkové součty</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:"1.25rem"}}>
           {AM.filter(a=>totals[a.key]>0).map(a=>(
