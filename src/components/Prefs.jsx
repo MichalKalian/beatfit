@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function Prefs({prefs,setPrefs,activeWsId,activeTeam,AM,onClose,onSave}){
+export default function Prefs({prefs,setPrefs,activeWsId,activeTeam,AM,onClose,onSave,theme,setTheme}){
   const update = (patch)=>setPrefs(p=>{const n=JSON.parse(JSON.stringify(p));Object.assign(n,patch);localStorage.setItem('bf_prefs',JSON.stringify(n));return n;});
   const updateSelectedActsWs = (key,checked)=>{
     const sa = new Set(prefs.selectedActs?.ws||[]);

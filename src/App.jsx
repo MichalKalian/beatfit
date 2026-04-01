@@ -70,6 +70,7 @@ export default function App(){
     return {limit:{enabled:false,period:'day',value:100},selectedActs:{ws:[],teams:{}}};
   });
   const [prefsOpen,setPrefsOpen] = useState(false);
+  const [theme,setTheme] = useState(()=>localStorage.getItem('bf_theme')||'system');
   // refs for debounced DB save and skip-on-load behavior
   const saveTimeoutRef = useRef(null);
   const skipSaveRef = useRef(false);
@@ -250,6 +251,13 @@ export default function App(){
     localStorage.setItem(SK,JSON.stringify({userId:uid,activeWsId:data.id}));
     setStep("app");
   }
+
+  // apply theme to <html> element
+  useEffect(()=>{
+    if(theme==='system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme',theme);
+    localStorage.setItem('bf_theme',theme);
+  },[theme]);
 
   // load prefs when context/user changes
   useEffect(()=>{
@@ -798,7 +806,7 @@ export default function App(){
           <button onClick={()=>joinByCode(pendInv)} className="bf-btn" style={{width:"auto",padding:"8px 14px",flexShrink:0,fontSize:13}}>Přijmout</button>
           <button onClick={()=>{setPendInv(null);setInvInfo(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",fontSize:20,padding:"0 0 0 4px",lineHeight:1}}>×</button>
         </div>}
-        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />}
+        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
         <input type="date" value={logDate} max={todayStr()} onChange={e=>{setLogDate(e.target.value);setForm(entries[uid]?.[e.target.value]||{});}} className="bf-inp bf-inp-mono" style={{marginBottom:"1rem",textAlign:"center",fontSize:14}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"1rem"}}>
           {[{l:"Skóre",v:score.toFixed(1)},{l:"Věk. koef.",v:`×${ageMult(age).toFixed(2)}`},{l:"Řada",v:`${streak}${streak>0?" 🔥":""}`,c:streak>=7?"#f97316":undefined}].map(({l,v,c})=>(
@@ -857,7 +865,7 @@ export default function App(){
     return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
-        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />}
+        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
         <Err err={err} setErr={setErr}/>
         <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} />
       </div>
@@ -869,7 +877,7 @@ export default function App(){
     if(teamView==="list")return(
       <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
-        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />}
+        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
         <Err err={err} setErr={setErr}/>
         <TeamsList myTeamIds={myTeamIds} teams={teams} members={members} seasons={seasons} uid={uid} setActiveTeam={setActiveTeam} setTeamView={setTeamView} setTTab={setTTab} setTSeason={setTSeason} setShowTSF={setShowTSF} />
       </div>
@@ -926,7 +934,7 @@ export default function App(){
             fmtVal={fmtVal}
               prefs={prefs}
           />
-            {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} />} 
+            {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />} 
         </div>
       );
     }
