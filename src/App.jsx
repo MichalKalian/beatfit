@@ -59,6 +59,16 @@ export default function App(){
   const[goalIn,setGoalIn]       = useState("");
   const[goalFlash,setGoalFlash] = useState(false);
   const[prFlash,setPrFlash]     = useState([]); // activity keys that just got a new PR
+  // ── workspace admin ───────────────────────────────────────────────────────
+  const[wsAdminTab,setWsAdminTab]         = useState("players");
+  const[wsAdminUsers,setWsAdminUsers]     = useState([]);
+  const[wsAdminLoading,setWsAdminLoading] = useState(false);
+  const[wsAdminEditUser,setWsAdminEditUser] = useState(null);
+  const[wsAdminEditName,setWsAdminEditName] = useState("");
+  const[wsAdminEditDob,setWsAdminEditDob]   = useState("");
+  const[wsAdminPtsEdit,setWsAdminPtsEdit]   = useState({});
+  const[wsAdminPtsSv,setWsAdminPtsSv]       = useState(false);
+  const[wsAdminPtsFlash,setWsAdminPtsFlash] = useState(false);
   const[renameWs,setRenameWs]   = useState(false);
   const[renameVal,setRenameVal] = useState("");
   const[wsActsEdit,setWsActsEdit]     = useState(null);
@@ -193,7 +203,7 @@ export default function App(){
       const{data:mData}=await supabase.from("workspace_members").select("user_id").eq("workspace_id",wsId);
       const memberIds=(mData||[]).map(r=>r.user_id);
       if(!memberIds.length){setWsUsers({});setEntries({});setLoading(false);return;}
-      const[uR,eR,gR,tR,sR,stR,tmR]=await Promise.all([
+      const[uR,eR,gR,tR,sR,stR,tmR,wsPtsR]=await Promise.all([
         supabase.from("users").select("*").in("id",memberIds),
         supabase.from("entries").select("*").in("user_id",memberIds),
         supabase.from("goals").select("*").in("user_id",memberIds),
@@ -201,6 +211,7 @@ export default function App(){
         supabase.from("seasons").select("*").eq("workspace_id",wsId),
         supabase.from("settings").select("*").eq("key","pts"),
         supabase.from("team_members").select("*"),
+        supabase.from("settings").select("*").eq("key",`pts:${wsId}`),
       ]);
       const uMap={};for(const u of uR.data||[])uMap[u.id]={name:u.name,dob:u.dob};setWsUsers(uMap);
       const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
@@ -208,7 +219,8 @@ export default function App(){
       const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code,selected_acts:t.selected_acts||null};
       const tIds=Object.keys(tMap),mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
-      if(stR.data?.length>0)setPts({...DEFAULT_PTS,...stR.data[0].value});
+      const basePts=stR.data?.length>0?{...DEFAULT_PTS,...stR.data[0].value}:{...DEFAULT_PTS};
+      setPts(wsPtsR.data?.length>0?{...basePts,...wsPtsR.data[0].value}:basePts);
       const actualUserId = userId || uid;
       setForm(eMap[actualUserId]?.[logDate]||{});
       setGoalIn(gMap[actualUserId]||"");
@@ -467,6 +479,57 @@ export default function App(){
     if(!window.confirm(`Opravdu smazat výzvu "${seasons[id]?.name}"?`))return;
     await supabase.from("seasons").delete().eq("id",id);
     setSeasons(s=>{const n={...s};delete n[id];return n;});
+  }
+
+  // ── workspace admin ────────────────────────────────────────────────────────
+  async function loadWsAdminData(){
+    setWsAdminLoading(true);
+    const{data:mData}=await supabase.from("workspace_members").select("user_id").eq("workspace_id",activeWsId);
+    const memberIds=(mData||[]).map(r=>r.user_id);
+    if(!memberIds.length){setWsAdminUsers([]);setWsAdminPtsEdit({...pts});setWsAdminLoading(false);return;}
+    const[uR,eR]=await Promise.all([
+      supabase.from("users").select("*").in("id",memberIds),
+      supabase.from("entries").select("user_id").in("user_id",memberIds),
+    ]);
+    const ec={};for(const e of eR.data||[])ec[e.user_id]=(ec[e.user_id]||0)+1;
+    setWsAdminUsers((uR.data||[]).map(u=>({...u,entryCount:ec[u.id]||0})));
+    setWsAdminPtsEdit({...pts});
+    setWsAdminLoading(false);
+  }
+
+  async function wsAdminSaveUser(){
+    if(!wsAdminEditUser||!wsAdminEditName.trim())return;
+    const{error}=await supabase.from("users").update({name:wsAdminEditName.trim(),dob:wsAdminEditDob}).eq("id",wsAdminEditUser);
+    if(error){setErr("Uložení selhalo.");return;}
+    setWsAdminUsers(u=>u.map(x=>x.id===wsAdminEditUser?{...x,name:wsAdminEditName.trim(),dob:wsAdminEditDob}:x));
+    setWsUsers(u=>({...u,[wsAdminEditUser]:{...u[wsAdminEditUser],name:wsAdminEditName.trim(),dob:wsAdminEditDob}}));
+    setWsAdminEditUser(null);
+  }
+
+  async function wsAdminResetPin(userId){
+    const np=prompt("Nový PIN (min. 4 číslice):");if(!np||np.length<4)return;
+    const{error}=await supabase.from("users").update({pin:np}).eq("id",userId);
+    if(error){setErr("Reset PINu selhal.");return;}
+    setWsAdminUsers(u=>u.map(x=>x.id===userId?{...x,pin:np}:x));
+  }
+
+  async function wsAdminRemoveUser(userId){
+    const u=wsAdminUsers.find(x=>x.id===userId);
+    if(!window.confirm(`Opravdu odebrat hráče "${u?.name}" ze skupiny?`))return;
+    const{error}=await supabase.from("workspace_members").delete().eq("workspace_id",activeWsId).eq("user_id",userId);
+    if(error){setErr("Odebrání selhalo.");return;}
+    setWsAdminUsers(u=>u.filter(x=>x.id!==userId));
+    setWsUsers(u=>{const n={...u};delete n[userId];return n;});
+  }
+
+  async function saveWsPts(){
+    setWsAdminPtsSv(true);
+    const key=`pts:${activeWsId}`;
+    const{error}=await supabase.from("settings").upsert({key,value:wsAdminPtsEdit},{onConflict:"key"});
+    if(error){setErr("Uložení koeficientů selhalo.");setWsAdminPtsSv(false);return;}
+    setPts({...DEFAULT_PTS,...wsAdminPtsEdit});
+    setWsAdminPtsFlash(true);setTimeout(()=>setWsAdminPtsFlash(false),2000);
+    setWsAdminPtsSv(false);
   }
 
   function getVisibleActs(selected_acts){
@@ -940,6 +1003,69 @@ export default function App(){
     }
   }
 
+  // ══ WS ADMIN ════════════════════════════════════════════════════════════
+  if(view==="wsadmin"&&isWsCreator){
+    return(
+      <div style={P} onClick={()=>wsDropOpen&&setWsDropOpen(false)}>
+        <div className="bf-topbar">
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>setView("stats")} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",color:"var(--bf-text3)",padding:0,lineHeight:1}}>‹</button>
+            <div>
+              <div className="bf-label">Správa skupiny</div>
+              <p style={{margin:0,fontWeight:800,fontSize:15,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{activeWs?.name}</p>
+            </div>
+          </div>
+        </div>
+        <Err err={err} setErr={setErr}/>
+        <div className="bf-nav" style={{marginBottom:"1.25rem"}}>
+          {[["players","Hráči"],["pts","Koeficienty"]].map(([t,l])=>(
+            <button key={t} onClick={()=>{setWsAdminTab(t);setWsAdminEditUser(null);setErr(null);}} className={`bf-nav-btn${wsAdminTab===t?" active":""}`}>{l}</button>
+          ))}
+        </div>
+        {wsAdminLoading&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Načítám…</p>}
+        {wsAdminTab==="players"&&!wsAdminLoading&&<>
+          {wsAdminEditUser?(
+            <div className="bf-card">
+              <div className="bf-label" style={{marginBottom:10}}>Upravit hráče</div>
+              <input value={wsAdminEditName} onChange={e=>setWsAdminEditName(e.target.value)} className="bf-inp" style={{marginBottom:8}}/>
+              <label className="bf-label" style={{marginBottom:4}}>Datum narození</label>
+              <input type="date" value={wsAdminEditDob} onChange={e=>setWsAdminEditDob(e.target.value)} className="bf-inp bf-inp-mono" style={{marginBottom:12}}/>
+              <div style={{display:"flex",gap:8}}><button onClick={wsAdminSaveUser} className="bf-btn" style={{flex:1}}>Uložit</button><button onClick={()=>setWsAdminEditUser(null)} className="bf-btn-ghost" style={{flex:1}}>Zrušit</button></div>
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:5}}>
+              {wsAdminUsers.sort((a,b)=>a.name.localeCompare(b.name)).map(u=>(
+                <div key={u.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"var(--bf-surface)",border:"1.5px solid var(--bf-border-md)",borderRadius:"var(--bf-r-md)"}}>
+                  <div className="bf-av" style={{width:32,height:32,fontSize:13,flexShrink:0}}>{u.name[0]}</div>
+                  <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"var(--bf-text)",fontFamily:"var(--bf-font)"}}>{u.name}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{calcAge(u.dob)} let · {u.entryCount} záz.</p></div>
+                  <button onClick={()=>wsAdminResetPin(u.id)} className="bf-btn-ghost" style={{fontSize:11,padding:"5px 10px"}}>PIN</button>
+                  <button onClick={()=>{setWsAdminEditUser(u.id);setWsAdminEditName(u.name);setWsAdminEditDob(u.dob||"");}} className="bf-btn-ghost" style={{fontSize:11,padding:"5px 10px"}}>Upravit</button>
+                  {u.id!==uid&&<button onClick={()=>wsAdminRemoveUser(u.id)} className="bf-btn-danger" style={{fontSize:11,padding:"5px 10px"}}>Odebrat</button>}
+                </div>
+              ))}
+              {!wsAdminUsers.length&&<p style={{fontSize:13,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>Žádní členové.</p>}
+            </div>
+          )}
+        </>}
+        {wsAdminTab==="pts"&&!wsAdminLoading&&<>
+          <div className="bf-label" style={{marginBottom:10}}>Body za jednotku (pro tuto skupinu)</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:"1rem"}}>
+            {AM.map(a=>{const current=wsAdminPtsEdit[a.key]??DEFAULT_PTS[a.key],changed=current!==DEFAULT_PTS[a.key];return(
+              <div key={a.key} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:"var(--bf-surface)",border:`1.5px solid ${changed?"var(--bf-warn)":"var(--bf-border-md)"}`,borderRadius:"var(--bf-r-md)"}}>
+                <div className="bf-act-icon" style={{background:a.color+"20",color:a.color}}>{a.icon}</div>
+                <div style={{flex:1}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>výchozí: {DEFAULT_PTS[a.key]} b/{a.unit}</p></div>
+                <input type="number" min="0" step="0.001" value={current} onChange={e=>setWsAdminPtsEdit(p=>({...p,[a.key]:parseFloat(e.target.value)||0}))} className="bf-act-num" style={{width:74}}/>
+                <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",minWidth:28}}>b/{a.unit}</span>
+              </div>
+            );})}
+          </div>
+          <button onClick={()=>setWsAdminPtsEdit({...DEFAULT_PTS})} className="bf-btn-ghost" style={{width:"100%",marginBottom:8,justifyContent:"center"}}>Obnovit výchozí hodnoty</button>
+          <button onClick={saveWsPts} disabled={wsAdminPtsSv} className="bf-btn">{wsAdminPtsSv?"Ukládám…":wsAdminPtsFlash?"✓ Uloženo!":"Uložit koeficienty"}</button>
+        </>}
+      </div>
+    );
+  }
+
   // ══ STATS ════════════════════════════════════════════════════════════════
   if(view==="stats"){
     const myDays=entries[uid]||{},dates=Object.keys(myDays).sort().reverse();
@@ -965,7 +1091,10 @@ export default function App(){
         <div className="bf-card" style={{marginBottom:"1rem"}}>
           <div className="bf-section-header" style={{marginBottom:8}}>
             <div className="bf-label" style={{margin:0}}>Moje skupina</div>
-            {isWsCreator&&!renameWs&&<button onClick={()=>{setRenameWs(true);setRenameVal(activeWs?.name||"");}} className="bf-btn-out" style={{fontSize:11}}>Přejmenovat</button>}
+            {isWsCreator&&!renameWs&&<div style={{display:"flex",gap:6}}>
+            <button onClick={()=>{setRenameWs(true);setRenameVal(activeWs?.name||"");}} className="bf-btn-out" style={{fontSize:11}}>Přejmenovat</button>
+            <button onClick={()=>{setView("wsadmin");setWsAdminTab("players");setWsAdminEditUser(null);loadWsAdminData();}} className="bf-btn-out" style={{fontSize:11}}>Správa →</button>
+          </div>}
           </div>
           {renameWs?(
             <div style={{display:"flex",gap:8}}>
