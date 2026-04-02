@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./beatfit.css";
 import { DEFAULT_PTS, AM, getActs, calcAge, ageMult, calcScore, todayStr, weekAgoStr, weekStartStr, dMinus, calcStreak, randCode, fmtVal, exportCSV, seasonStatus, seasonLabel, daysLeft, MEDALS, RANK_CLR } from "./lib/helpers";
 import { computeEffectiveCap } from "./lib/helpers";
-import { Err, SFormCard } from "./components/Misc";
+import { Err } from "./components/Misc";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import TeamsList from "./components/TeamsList";
@@ -71,9 +71,6 @@ export default function App(){
   const[wsAdminPtsFlash,setWsAdminPtsFlash] = useState(false);
   const[renameWs,setRenameWs]   = useState(false);
   const[renameVal,setRenameVal] = useState("");
-  const[wsActsEdit,setWsActsEdit]     = useState(null);
-  const[wsActsSaving,setWsActsSaving] = useState(false);
-  const[teamActsEdit,setTeamActsEdit] = useState(null);
   // user preferences (localStorage-backed)
   const [prefs,setPrefs] = useState(()=>{
     try{const s=localStorage.getItem('bf_prefs');if(s)return JSON.parse(s);}catch(e){}
@@ -126,7 +123,6 @@ export default function App(){
   const[sForm,setSForm]         = useState({name:"",start_date:"",end_date:""});
   const[sSaving,setSSaving]     = useState(false);
   const[sFlash,setSFlash]       = useState(false);
-  const[showSF,setShowSF]       = useState(false);
   const[showTSF,setShowTSF]     = useState(false);
   // ── admin ─────────────────────────────────────────────────────────────────
   const[adminPwd,setAdminPwd]   = useState("");
@@ -167,7 +163,7 @@ export default function App(){
     try{
       const{data:u,error:ue}=await supabase.from("users").select("*").eq("id",sess.userId).single();
       if(ue||!u)return false;
-      setUid(sess.userId);setUserMeta({name:u.name,dob:u.dob,pin:u.pin});
+      setUid(sess.userId);setUserMeta({name:u.name,dob:u.dob});
       // load workspaces user belongs to
       const wsList=await loadUserWorkspaces(sess.userId);
       setKnownWs(wsList);
@@ -203,21 +199,22 @@ export default function App(){
       const{data:mData}=await supabase.from("workspace_members").select("user_id").eq("workspace_id",wsId);
       const memberIds=(mData||[]).map(r=>r.user_id);
       if(!memberIds.length){setWsUsers({});setEntries({});setLoading(false);return;}
-      const[uR,eR,gR,tR,sR,stR,tmR,wsPtsR]=await Promise.all([
-        supabase.from("users").select("*").in("id",memberIds),
+      const[uR,eR,gR,tR,sR,stR,wsPtsR]=await Promise.all([
+        supabase.from("users").select("id,name,dob").in("id",memberIds),
         supabase.from("entries").select("*").in("user_id",memberIds),
-        supabase.from("goals").select("*").in("user_id",memberIds),
+        supabase.from("goals").select("user_id,weekly_goal").in("user_id",memberIds),
         supabase.from("teams").select("*").eq("workspace_id",wsId),
         supabase.from("seasons").select("*").eq("workspace_id",wsId),
         supabase.from("settings").select("*").eq("key","pts"),
-        supabase.from("team_members").select("*"),
         supabase.from("settings").select("*").eq("key",`pts:${wsId}`),
       ]);
+      const tIds=(tR.data||[]).map(t=>t.id);
+      const tmR=tIds.length?await supabase.from("team_members").select("team_id,user_id").in("team_id",tIds):{data:[]};
       const uMap={};for(const u of uR.data||[])uMap[u.id]={name:u.name,dob:u.dob};setWsUsers(uMap);
       const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
       const gMap={};for(const g of gR.data||[])gMap[g.user_id]=g.weekly_goal;setGoals(gMap);
       const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code,selected_acts:t.selected_acts||null};
-      const tIds=Object.keys(tMap),mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
+      const mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
       const basePts=stR.data?.length>0?{...DEFAULT_PTS,...stR.data[0].value}:{...DEFAULT_PTS};
       setPts(wsPtsR.data?.length>0?{...basePts,...wsPtsR.data[0].value}:basePts);
@@ -310,12 +307,12 @@ export default function App(){
   async function doLogin(){
     if(!authName.trim()||!authPin){setAuthErr("Vyplň jméno a PIN.");return;}
     setAuthLoad(true);setAuthErr("");
-    const{data:found,error}=await supabase.from("users").select("*");
+    const{data:found,error}=await supabase.from("users").select("id,name,dob,pin").ilike("name",authName.trim());
     if(error){setAuthErr("Chyba při načítání.");setAuthLoad(false);return;}
     const data=found?.find(u=>u.name.toLowerCase().trim()===authName.toLowerCase().trim());
     if(!data){setAuthErr(`Hráč "${authName.trim()}" nebyl nalezen.`);setAuthLoad(false);return;}
     if(data.pin!==authPin){setAuthErr("Nesprávný PIN.");setAuthLoad(false);return;}
-    setUid(data.id);setUserMeta({name:data.name,dob:data.dob,pin:data.pin});
+    setUid(data.id);setUserMeta({name:data.name,dob:data.dob});
     const wsList=await loadUserWorkspaces(data.id);
     setKnownWs(wsList);
     if(wsList.length===0){
@@ -342,7 +339,7 @@ export default function App(){
     const id="u"+Date.now();
     const{error:ue}=await supabase.from("users").insert({id,name:authName.trim(),dob:authDob,since:todayStr(),pin:authPin});
     if(ue){setAuthErr("Registrace selhala.");setAuthLoad(false);return;}
-    setUid(id);setUserMeta({name:authName.trim(),dob:authDob,pin:authPin});
+    setUid(id);setUserMeta({name:authName.trim(),dob:authDob});
     setKnownWs([]);
     localStorage.setItem(SK,JSON.stringify({userId:id,activeWsId:null}));
     setAuthLoad(false);setStep("ws-select");
@@ -414,10 +411,44 @@ export default function App(){
     ]);
     const ec={};for(const e of eR.data||[])ec[e.user_id]=(ec[e.user_id]||0)+1;
     const wMap={};for(const w of wR.data||[])wMap[w.id]={name:w.name,code:w.code};setAllWs(wMap);
-    // group users by workspace via workspace_members
-    // Header component extracted to src/components/Header.jsx
-    const wsId=Object.keys(allWsU).find(w=>(allWsU[w]||[]).some(u=>u.id===editUser));
-    setAllWsU(w=>({...w,[wsId]:(w[wsId]||[]).map(u=>u.id===editUser?{...u,name:editName.trim(),dob:editDob}:u)}));setEditUser(null);
+    const wuMap={};
+    for(const m of mR.data||[]){
+      if(!wuMap[m.workspace_id])wuMap[m.workspace_id]=[];
+      const user=(uR.data||[]).find(u=>u.id===m.user_id);
+      if(user)wuMap[m.workspace_id].push({...user,entryCount:ec[user.id]||0});
+    }
+    setAllWsU(wuMap);
+    setStep("admin");
+  }
+
+  async function saveAdminUser(){
+    if(!editUser||!editName.trim())return;
+    const{error}=await supabase.from("users").update({name:editName.trim(),dob:editDob}).eq("id",editUser);
+    if(error){setErr("Uložení selhalo.");return;}
+    setAllWsU(w=>{
+      const wsId=Object.keys(w).find(k=>(w[k]||[]).some(u=>u.id===editUser));
+      if(!wsId)return w;
+      return{...w,[wsId]:(w[wsId]||[]).map(u=>u.id===editUser?{...u,name:editName.trim(),dob:editDob}:u)};
+    });
+    setEditUser(null);
+  }
+
+  async function deleteAdminWs(wsId){
+    if(!window.confirm(`Opravdu smazat skupinu "${allWs[wsId]?.name}"? Tato akce je nevratná.`))return;
+    const{error}=await supabase.from("workspaces").delete().eq("id",wsId);
+    if(error){setErr("Smazání skupiny selhalo.");return;}
+    setAllWs(w=>{const n={...w};delete n[wsId];return n;});
+    setAllWsU(w=>{const n={...w};delete n[wsId];return n;});
+    if(aSelWs===wsId)setASelWs(null);
+  }
+
+  async function savePts(){
+    setPtsSv(true);
+    const{error}=await supabase.from("settings").upsert({key:"pts",value:ptsEdit},{onConflict:"key"});
+    if(error){setErr("Uložení koeficientů selhalo.");setPtsSv(false);return;}
+    setPts({...DEFAULT_PTS,...ptsEdit});
+    setPtsFlash(true);setTimeout(()=>setPtsFlash(false),2000);
+    setPtsSv(false);
   }
 
   async function resetPin(userId,wsId){
@@ -471,7 +502,7 @@ export default function App(){
     const{error:e}=await supabase.from("seasons").insert(ns);
     if(e){setErr("Vytvoření sezóny selhalo.");setSSaving(false);return;}
     setSeasons(s=>({...s,[id]:{name:ns.name,start_date:ns.start_date,end_date:ns.end_date,created_by:uid,team_id:teamId||null,scope:ns.scope}}));
-    setSForm({name:"",start_date:"",end_date:""});setShowSF(false);setShowTSF(false);
+    setSForm({name:"",start_date:"",end_date:""});setShowTSF(false);
     setSFlash(true);setTimeout(()=>setSFlash(false),2000);setSSaving(false);
   }
 
@@ -530,11 +561,6 @@ export default function App(){
     setPts({...DEFAULT_PTS,...wsAdminPtsEdit});
     setWsAdminPtsFlash(true);setTimeout(()=>setWsAdminPtsFlash(false),2000);
     setWsAdminPtsSv(false);
-  }
-
-  function getVisibleActs(selected_acts){
-    if(!selected_acts||!selected_acts.length) return AM;
-    return AM.filter(a=>selected_acts.includes(a.key));
   }
 
   function buildLB(filterIds,fromDate,toDate,opts={}){

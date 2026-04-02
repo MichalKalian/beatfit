@@ -163,7 +163,7 @@ export default function TeamDetail(props){
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {vals.filter(v=>v.val>0).map((v,i)=>(
-                  <div key={v.name}>
+                  <div key={i}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                       <span style={{fontSize:12,fontWeight:v.isMe?700:500,color:v.isMe?"var(--bf-text)":"var(--bf-text2)",fontFamily:"var(--bf-font)"}}>{i===0?"🥇 ":""}{v.name}</span>
                       <span style={{fontSize:12,fontFamily:"var(--bf-mono)",color:"var(--bf-text)",fontWeight:600}}>{fmtVal(a,v.val)} {a.unit}</span>
