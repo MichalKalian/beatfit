@@ -1234,6 +1234,7 @@ export default function App(){
             </div>
           ))}
         </div>
+        {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
       </div>
     );
   }
