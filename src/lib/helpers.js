@@ -1,5 +1,7 @@
 // Shared constants and pure helper functions extracted from App.jsx
 export const DEFAULT_PTS = { shyby:8,anglicky:5,kliky:2,drepy:1.5,sedLehy:1,behKm:15,koloKm:4,plankSec:0.05,kroky:0.003,silovy:1.5,plavani:12,veslovani:10,kardio:0.8,pivoMale:-3,pivoVelke:-5,vino:-6,panak:-8 };
+// Maximum reasonable values per activity per day — prevents gaming (e.g. logging 10 000 push-ups)
+export const DAILY_CAPS = { shyby:200,anglicky:500,kliky:1000,drepy:2000,sedLehy:2000,behKm:100,koloKm:300,plankSec:3600,kroky:50000,silovy:240,plavani:40,veslovani:100,kardio:240 };
 export const AM = [
   {key:"shyby",    label:"Shyby",      sub:"pull-ups", unit:"ks", icon:"⬆",color:"#c084fc"},
   {key:"anglicky", label:"Angličáky",  sub:"burpees",  unit:"ks", icon:"★",color:"#f97316"},

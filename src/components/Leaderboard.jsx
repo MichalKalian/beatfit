@@ -30,6 +30,7 @@ export default function Leaderboard(props) {
 
   const [showChart, setShowChart] = useState(false);
   const [highlightedId, setHighlightedId] = useState(null);
+  const [actFilter, setActFilter] = useState(null); // key of activity to drill into, null = overall
   const toggleHighlight = id => setHighlightedId(prev => prev === id ? null : id);
 
   const periodOptions = [
@@ -251,37 +252,89 @@ export default function Leaderboard(props) {
         </div>
       )}
 
-      <div className="bf-label" style={{ marginBottom: 8 }}>Celkové pořadí</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: "1.5rem" }}>
-        {sorted.length === 0 && <p style={{ fontSize: 13, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>Zatím žádná data.</p>}
-        {sorted.map(([id, d], i) => {
-          const streak = calcStreak(entries[id] || {});
-          return (
-            <div key={id} className={`bf-lb-row${id === uid ? " me" : ""}`}>
-              <span style={{ fontSize: 17, minWidth: 30, color: RANK_CLR[i] || "var(--bf-text3)", fontWeight: 800, fontFamily: "var(--bf-mono)" }}>{MEDALS[i] || `${i + 1}.`}</span>
-              <div className="bf-av" style={{ width: 28, height: 28, fontSize: 11 }}>{d.name[0]}</div>
-              <span style={{ flex: 1, fontWeight: 700, fontSize: 14, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{d.name}</span>
-              {streak >= 3 && <span className="bf-badge bf-badge-accent" style={{ fontSize: 10 }}>{streak}🔥</span>}
-              <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "var(--bf-mono)", color: "var(--bf-text)" }}>{d.sc.toFixed(1)}</span>
-              <span style={{ fontSize: 10, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>b</span>
+      {actFilter ? (() => {
+        // ── Per-activity leaderboard ──────────────────────────────────────
+        const act = AM.find(a => a.key === actFilter);
+        const actSorted = [...sorted]
+          .filter(([, d]) => (d.acts[actFilter] || 0) > 0)
+          .sort((a, b) => (b[1].acts[actFilter] || 0) - (a[1].acts[actFilter] || 0));
+        const myActRank = actSorted.findIndex(([id]) => id === uid) + 1;
+        return (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem" }}>
+              <button
+                onClick={() => setActFilter(null)}
+                style={{ fontSize: 22, background: "none", border: "none", cursor: "pointer", color: "var(--bf-text3)", padding: 0, lineHeight: 1 }}
+              >‹</button>
+              <div className="bf-act-icon" style={{ width: 30, height: 30, borderRadius: 8, fontSize: 14, background: act.color + "20", color: act.color }}>{act.icon}</div>
+              <span style={{ fontWeight: 700, fontSize: 16, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{act.label}</span>
+              <span style={{ fontSize: 12, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>({act.unit})</span>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="bf-label" style={{ marginBottom: 8 }}>Vítězové disciplín</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        {AM.filter(a => actW[a.key]).sort((a, b) => actW[b.key].val - actW[a.key].val).map(a => (
-          <div key={a.key} className="bf-card" style={{ padding: "10px 14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <div className="bf-act-icon" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, background: a.color + "20", color: a.color }}>{a.icon}</div>
-              <span style={{ fontSize: 11, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>{a.label}</span>
+            {myActRank > 0 && (
+              <div className="bf-surface-accent" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                <span style={{ fontSize: 12, color: "var(--bf-accent-text)", fontFamily: "var(--bf-font)", fontWeight: 600 }}>Tvoje pořadí</span>
+                <span style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--bf-mono)", color: "var(--bf-accent)" }}>#{myActRank}</span>
+                <span style={{ fontSize: 12, color: "var(--bf-accent-text)", fontFamily: "var(--bf-font)" }}>z {actSorted.length} hráčů</span>
+              </div>
+            )}
+            <div className="bf-label" style={{ marginBottom: 8 }}>Pořadí: {act.label}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: "1.5rem" }}>
+              {actSorted.length === 0 && <p style={{ fontSize: 13, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>Zatím žádná data.</p>}
+              {actSorted.map(([id, d], i) => (
+                <div key={id} className={`bf-lb-row${id === uid ? " me" : ""}`}>
+                  <span style={{ fontSize: 17, minWidth: 30, color: RANK_CLR[i] || "var(--bf-text3)", fontWeight: 800, fontFamily: "var(--bf-mono)" }}>{MEDALS[i] || `${i + 1}.`}</span>
+                  <div className="bf-av" style={{ width: 28, height: 28, fontSize: 11 }}>{d.name[0]}</div>
+                  <span style={{ flex: 1, fontWeight: 700, fontSize: 14, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{d.name}</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "var(--bf-mono)", color: act.color }}>{fmtVal(act, d.acts[actFilter] || 0)}</span>
+                  <span style={{ fontSize: 10, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>{act.unit}</span>
+                </div>
+              ))}
             </div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{actW[a.key].name}</p>
-            <p style={{ margin: 0, fontSize: 12, color: "var(--bf-text2)", fontFamily: "var(--bf-mono)", fontWeight: 500 }}>{fmtVal(a, actW[a.key].val)} {a.unit}</p>
+          </>
+        );
+      })() : (
+        // ── Overall leaderboard + discipline cards ────────────────────────
+        <>
+          <div className="bf-label" style={{ marginBottom: 8 }}>Celkové pořadí</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: "1.5rem" }}>
+            {sorted.length === 0 && <p style={{ fontSize: 13, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>Zatím žádná data.</p>}
+            {sorted.map(([id, d], i) => {
+              const streak = calcStreak(entries[id] || {});
+              return (
+                <div key={id} className={`bf-lb-row${id === uid ? " me" : ""}`}>
+                  <span style={{ fontSize: 17, minWidth: 30, color: RANK_CLR[i] || "var(--bf-text3)", fontWeight: 800, fontFamily: "var(--bf-mono)" }}>{MEDALS[i] || `${i + 1}.`}</span>
+                  <div className="bf-av" style={{ width: 28, height: 28, fontSize: 11 }}>{d.name[0]}</div>
+                  <span style={{ flex: 1, fontWeight: 700, fontSize: 14, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{d.name}</span>
+                  {streak >= 3 && <span className="bf-badge bf-badge-accent" style={{ fontSize: 10 }}>{streak}🔥</span>}
+                  <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "var(--bf-mono)", color: "var(--bf-text)" }}>{d.sc.toFixed(1)}</span>
+                  <span style={{ fontSize: 10, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>b</span>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+
+          <div className="bf-label" style={{ marginBottom: 8 }}>Vítězové disciplín <span style={{ fontSize: 10, fontWeight: 400, color: "var(--bf-text3)" }}>— klikni pro pořadí</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {AM.filter(a => actW[a.key]).sort((a, b) => actW[b.key].val - actW[a.key].val).map(a => (
+              <div
+                key={a.key}
+                className="bf-card"
+                onClick={() => setActFilter(a.key)}
+                style={{ padding: "10px 14px", cursor: "pointer", transition: "opacity 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  <div className="bf-act-icon" style={{ width: 26, height: 26, borderRadius: 6, fontSize: 11, background: a.color + "20", color: a.color }}>{a.icon}</div>
+                  <span style={{ fontSize: 11, color: "var(--bf-text3)", fontFamily: "var(--bf-font)" }}>{a.label}</span>
+                </div>
+                <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, fontFamily: "var(--bf-font)", color: "var(--bf-text)" }}>{actW[a.key].name}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--bf-text2)", fontFamily: "var(--bf-mono)", fontWeight: 500 }}>{fmtVal(a, actW[a.key].val)} {a.unit}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
