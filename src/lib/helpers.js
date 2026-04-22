@@ -25,7 +25,7 @@ export const AM = [
 export const getActs = pts => AM.map(a=>({...a,pts:pts[a.key]??DEFAULT_PTS[a.key]}));
 
 export function calcAge(dob){if(!dob)return 30;const b=new Date(dob),t=new Date();let a=t.getFullYear()-b.getFullYear();if(t<new Date(t.getFullYear(),b.getMonth(),b.getDate()))a--;return a;}
-export function ageMult(age){const a=parseInt(age)||30;if(a>=30)return 1+(a-30)*0.015;return Math.max(0.85,1-(30-a)*0.005);}
+export function ageMult(age){const p=parseInt(age);const a=(Number.isFinite(p)&&p>=0)?p:30;if(a>=30)return 1+(a-30)*0.015;return Math.max(0.85,1-(30-a)*0.005);}
 export function calcScore(e,age,pts,actKeys=null){
   if(!e) return 0;
   let acts = getActs(pts);

@@ -908,7 +908,7 @@ export default function App(){
             <div key={a.key} className="bf-act-row">
               <div className="bf-act-icon" style={{background:a.color+"20",color:a.color}}>{a.icon}</div>
               <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.pts} b/{a.unit} · {a.sub}</p></div>
-              <input type="number" min="0" step={a.unit==="km"?"0.1":"1"} value={form[a.key]||""} placeholder="—" onChange={e=>setForm(f=>({...f,[a.key]:e.target.value}))} className="bf-act-num"/>
+              <input type="number" min="0" step={a.unit==="km"?"0.1":"1"} value={form[a.key]||""} placeholder="—" onChange={e=>{const v=e.target.value;setForm(f=>({...f,[a.key]:parseFloat(v)<0?"0":v}))}} className="bf-act-num"/>
               <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",minWidth:20}}>{a.unit}</span>
             </div>
           ))}
@@ -923,7 +923,7 @@ export default function App(){
             <div key={a.key} className="bf-act-row" style={{borderColor:"var(--bf-danger-dim)"}}>
               <div className="bf-act-icon" style={{background:a.color+"15",color:a.color,fontSize:16}}>{a.icon}</div>
               <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,fontFamily:"var(--bf-font)",color:"var(--bf-text)"}}>{a.label}</p><p style={{margin:0,fontSize:10,color:"var(--bf-text3)",fontFamily:"var(--bf-font)"}}>{a.pts} b/{a.unit} · {a.sub}</p></div>
-              <input type="number" min="0" step="1" value={form[a.key]||""} placeholder="—" onChange={e=>setForm(f=>({...f,[a.key]:e.target.value}))} className="bf-act-num" style={{borderColor:"var(--bf-danger-dim)"}}/>
+              <input type="number" min="0" step="1" value={form[a.key]||""} placeholder="—" onChange={e=>{const v=e.target.value;setForm(f=>({...f,[a.key]:parseFloat(v)<0?"0":v}))}} className="bf-act-num" style={{borderColor:"var(--bf-danger-dim)"}}/>
               <span style={{fontSize:11,color:"var(--bf-text3)",fontFamily:"var(--bf-font)",minWidth:20}}>{a.unit}</span>
             </div>
           ))}

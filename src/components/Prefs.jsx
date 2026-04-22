@@ -50,7 +50,7 @@ export default function Prefs({prefs,setPrefs,activeWsId,activeTeam,AM,onClose,o
                 <option value="week">Týdenní</option>
                 <option value="month">Měsíční</option>
               </select>
-              <input className="bf-inp bf-inp-mono" type="number" value={prefs.limit.value} onChange={e=>update({limit:{...prefs.limit,value:parseFloat(e.target.value)||0}})} style={{width:120}}/>
+              <input className="bf-inp bf-inp-mono" type="number" min="0" value={prefs.limit.value} onChange={e=>update({limit:{...prefs.limit,value:Math.max(0,parseFloat(e.target.value)||0)}})} style={{width:120}}/>
               <div style={{color:'var(--bf-text3)'}}>bodů</div>
             </div>
           </section>
