@@ -26,6 +26,10 @@ export default function Leaderboard(props) {
     daysLeft,
     seasonStatus,
     lbChartData,
+    customFrom,
+    setCustomFrom,
+    customTo,
+    setCustomTo,
   } = props;
 
   const [showChart, setShowChart] = useState(false);
@@ -37,6 +41,7 @@ export default function Leaderboard(props) {
     ["today", "Dnes"],
     ["week", "Týden"],
     ["all", "Vše"],
+    ["custom", "Vlastní"],
   ];
 
   const renderProgressRace = () => {
@@ -210,6 +215,14 @@ export default function Leaderboard(props) {
           </div>
         )}
       </div>
+
+      {lbMode === "global" && period === "custom" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: "1rem" }}>
+          <input type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)} className="bf-inp bf-inp-mono" style={{ flex: 1, fontSize: 13 }} />
+          <span style={{ color: "var(--bf-text3)", fontSize: 12, flexShrink: 0 }}>–</span>
+          <input type="date" value={customTo} min={customFrom} onChange={e => setCustomTo(e.target.value)} className="bf-inp bf-inp-mono" style={{ flex: 1, fontSize: 13 }} />
+        </div>
+      )}
 
       {showChart && (
         <>

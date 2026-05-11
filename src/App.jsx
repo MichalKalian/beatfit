@@ -54,6 +54,8 @@ export default function App(){
   const[saving,setSaving]       = useState(false);
   const[flash,setFlash]         = useState(false);
   const[period,setPeriod]       = useState("week");
+  const[customFrom,setCustomFrom] = useState(dMinus(29));
+  const[customTo,setCustomTo]     = useState(todayStr());
   const[logDate,setLogDate]     = useState(todayStr());
   const[err,setErr]             = useState(null);
   const[form,setForm]           = useState({});
@@ -949,8 +951,8 @@ export default function App(){
   if(view==="leaderboard"){
     const actS=lbMode.startsWith("season:")?seasons[lbMode.slice(7)]:null;
     const selectedActsForWs = (prefs.selectedActs&&prefs.selectedActs.ws&&prefs.selectedActs.ws.length)?prefs.selectedActs.ws:null;
-    const spanInfo = actS? {fromDate:actS.start_date,toDate:actS.end_date} : {period: period};
-    const lb=actS?buildLB(null,actS.start_date,actS.end_date,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo}):buildLB(null,null,null,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo});
+    const spanInfo = actS? {fromDate:actS.start_date,toDate:actS.end_date} : period==="custom"?{fromDate:customFrom,toDate:customTo}:{period};
+    const lb=actS?buildLB(null,actS.start_date,actS.end_date,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo}):period==="custom"?buildLB(null,customFrom,customTo,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo}):buildLB(null,null,null,{selectedActs:selectedActsForWs,limit:prefs.limit,spanInfo});
     const sorted=Object.entries(lb).sort((a,b)=>b[1].sc-a[1].sc);
     const myRank=sorted.findIndex(([id])=>id===uid)+1;
     const actW={};
@@ -966,6 +968,9 @@ export default function App(){
         allDates=[todayStr()];
       } else if(period==='week'){
         for(let i=6;i>=0;i--)allDates.push(dMinus(i));
+      } else if(period==='custom'){
+        const cur=new Date(customFrom);const end=new Date(customTo);
+        while(cur<=end){allDates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
       } else {
         const s=new Set();for(const[,days] of Object.entries(entries))for(const d of Object.keys(days))s.add(d);allDates=Array.from(s).sort();
       }
@@ -992,7 +997,7 @@ export default function App(){
         <Header userMeta={userMeta} knownWs={knownWs} activeWs={activeWs} activeWsId={activeWsId} wsDropOpen={wsDropOpen} setWsDropOpen={setWsDropOpen} switchWs={switchWs} setStep={setStep} logout={logout} loading={loading} setAddWsMode={setAddWsMode} view={view} setView={setView} setTeamView={setTeamView} openPrefs={()=>setPrefsOpen(true)}/>
         {prefsOpen&&<Prefs prefs={prefs} setPrefs={setPrefs} activeWsId={activeWsId} activeTeam={activeTeam} AM={AM} onClose={()=>setPrefsOpen(false)} onSave={()=>upsertPrefsToDb(prefs)} theme={theme} setTheme={setTheme} />}
         <Err err={err} setErr={setErr}/>
-        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} lbChartData={lbChartData} />
+        <Leaderboard P={P} onCloseDropdown={()=>wsDropOpen&&setWsDropOpen(false)} lbMode={lbMode} setLbMode={setLbMode} globalSeasons={globalSeasons} period={period} setPeriod={setPeriod} customFrom={customFrom} setCustomFrom={setCustomFrom} customTo={customTo} setCustomTo={setCustomTo} loadWsData={loadWsData} activeWsId={activeWsId} actS={actS} sorted={sorted} myRank={myRank} actW={actW} AM={AM} fmtVal={fmtVal} calcStreak={calcStreak} entries={entries} uid={uid} MEDALS={MEDALS} RANK_CLR={RANK_CLR} seasonLabel={seasonLabel} daysLeft={daysLeft} seasonStatus={seasonStatus} prefs={prefs} lbChartData={lbChartData} />
       </div>
     );
   }
