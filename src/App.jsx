@@ -116,6 +116,7 @@ export default function App(){
   // ── teams / seasons ───────────────────────────────────────────────────────
   const[teamView,setTeamView]   = useState("list");
   const[activeTeam,setActiveTeam] = useState(null);
+  const[splashDone,setSplashDone] = useState(false);
   const[newTName,setNewTName]   = useState("");
   const[tPeriod,setTPeriod]     = useState("week");
   const[tTab,setTTab]           = useState("score");
@@ -159,6 +160,9 @@ export default function App(){
       });
     } else setLoading(false);
   },[]);
+
+  // Guarantee the splash screen shows for at least one full LogoBuild animation cycle (4.2 s)
+  useEffect(()=>{const t=setTimeout(()=>setSplashDone(true),4200);return()=>clearTimeout(t);},[]);
 
   async function restoreSession(sess, inv){
     try{
@@ -594,7 +598,7 @@ export default function App(){
   const P={padding:"1rem",maxWidth:480,margin:"0 auto"};
   
 
-  if(loading&&step!=="app")return<BeatFitLoader variant="logoBuild" />;
+  if((loading||!splashDone)&&step!=="app")return<BeatFitLoader variant="logoBuild" />;
 
   const activeWs=knownWs.find(w=>w.id===activeWsId);
   const isWsCreator=activeWs?.created_by===uid;
