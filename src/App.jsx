@@ -10,6 +10,7 @@ import TeamsList from "./components/TeamsList";
 import TeamCreate from "./components/TeamCreate";
 import TeamDetail from "./components/TeamDetail";
 import Prefs from "./components/Prefs";
+import BeatFitLoader from "./components/Loader";
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
 
@@ -593,7 +594,7 @@ export default function App(){
   const P={padding:"1rem",maxWidth:480,margin:"0 auto"};
   
 
-  if(loading&&step!=="app")return<div style={{...P,textAlign:"center",paddingTop:"3rem",color:"var(--bf-text3)",fontSize:14,fontFamily:"var(--bf-font)"}}>Načítám…</div>;
+  if(loading&&step!=="app")return<BeatFitLoader variant="logoBuild" />;
 
   const activeWs=knownWs.find(w=>w.id===activeWsId);
   const isWsCreator=activeWs?.created_by===uid;
