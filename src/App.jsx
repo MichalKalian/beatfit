@@ -220,7 +220,7 @@ export default function App(){
       const uMap={};for(const u of uR.data||[])uMap[u.id]={name:u.name,dob:u.dob};setWsUsers(uMap);
       const eMap={};for(const e of eR.data||[]){if(!eMap[e.user_id])eMap[e.user_id]={};eMap[e.user_id][e.date]=e.data;}setEntries(eMap);
       const gMap={};for(const g of gR.data||[])gMap[g.user_id]=g.weekly_goal;setGoals(gMap);
-      const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code,selected_acts:t.selected_acts||null};
+      const tMap={};for(const t of tR.data||[])tMap[t.id]={name:t.name,created_by:t.created_by,invite_code:t.invite_code,selected_acts:t.selected_acts||null};setTeams(tMap);
       const mMap={};for(const m of tmR.data||[]){if(!tIds.includes(m.team_id))continue;if(!mMap[m.team_id])mMap[m.team_id]=[];mMap[m.team_id].push(m.user_id);}setMembers(mMap);
       const sMap={};for(const s of sR.data||[])sMap[s.id]={name:s.name,start_date:s.start_date,end_date:s.end_date,created_by:s.created_by,team_id:s.team_id,scope:s.scope};setSeasons(sMap);
       const basePts=stR.data?.length>0?{...DEFAULT_PTS,...stR.data[0].value}:{...DEFAULT_PTS};
